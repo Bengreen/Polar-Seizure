@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+    <linearGradient id="pulse" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="50%" stop-color="#f43f5e"/>
+      <stop offset="100%" stop-color="#10b981"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+  
+  <!-- Outer Rounded Container (with 15% maskable safe zone) -->
+  <rect width="512" height="512" rx="128" fill="url(#bg)"/>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="none" stroke="#334155" stroke-width="4"/>
+
+  <!-- Shield / Heart Base Shape -->
+  <path d="M256 90 L380 140 C380 260 256 360 256 390 C256 360 132 260 132 140 Z" fill="#1e293b" opacity="0.6" stroke="#475569" stroke-width="6"/>
+
+  <!-- OpenSeizureDetector 3-8 Hz Tremor Waveform -->
+  <path d="M 120 256 L 180 256 L 205 210 L 225 290 L 245 170 L 265 330 L 285 200 L 305 280 L 330 256 L 392 256"
+        fill="none"
+        stroke="url(#pulse)"
+        stroke-width="14"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        filter="url(#glow)"/>
+
+  <!-- Center Active Node -->
+  <circle cx="255" cy="250" r="10" fill="#f43f5e"/>
+</svg>

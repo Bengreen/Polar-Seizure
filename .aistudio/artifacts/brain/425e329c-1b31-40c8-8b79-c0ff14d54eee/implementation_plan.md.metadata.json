@@ -1,0 +1,6 @@
+{
+  "summary": "Implementation plan for the OpenSeizureDetector-compatible Android PWA with Polar BLE streaming, 3-8 Hz FFT seizure analysis, dead man's handle watchdog, and Twilio/push caregiver alerting.",
+  "updatedAt": "2026-11-04T12:25:42.016611046Z",
+  "requestFeedback": true,
+  "userFacing": true
+}
