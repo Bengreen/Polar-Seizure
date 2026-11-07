@@ -1886,4 +1886,3 @@ class BluetoothService {
 }
 
 export const bluetooth = new BluetoothService();
-

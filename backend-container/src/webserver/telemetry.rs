@@ -1,10 +1,10 @@
 //! Telemetry frame ingestion and querying endpoints for Polar-Seizure.
 
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
 use tracing::info;
 

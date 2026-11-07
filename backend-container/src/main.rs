@@ -150,17 +150,13 @@ fn main() -> Result<(), AppError> {
                     .max_connections(1)
                     .connect(db_url.as_str())
                     .await
-                    .map_err(|e| {
-                        AppError::Message(format!("Failed to connect to database: {e}"))
-                    });
+                    .map_err(|e| AppError::Message(format!("Failed to connect to database: {e}")));
 
                 let res = match db_pool_res {
-                    Ok(db_pool) => {
-                        sqlx::migrate!()
-                            .run(&db_pool)
-                            .await
-                            .map_err(|e| AppError::Message(format!("Failed to run migrations: {e}")))
-                    }
+                    Ok(db_pool) => sqlx::migrate!()
+                        .run(&db_pool)
+                        .await
+                        .map_err(|e| AppError::Message(format!("Failed to run migrations: {e}"))),
                     Err(e) => Err(e),
                 };
 

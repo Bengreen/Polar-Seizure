@@ -14,7 +14,7 @@
       <feComposite in="SourceGraphic" in2="blur" operator="over"/>
     </filter>
   </defs>
-  
+
   <!-- Outer Rounded Container (with 15% maskable safe zone) -->
   <rect width="512" height="512" rx="128" fill="url(#bg)"/>
   <rect x="16" y="16" width="480" height="480" rx="112" fill="none" stroke="#334155" stroke-width="4"/>
