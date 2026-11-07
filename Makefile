@@ -20,22 +20,18 @@ BE_INTERNAL_PORT := 8080
 BE_INTERNAL_HEALTH_PORT := 8079
 FE_INTERNAL_PORT := 80
 
-# Auto-detect Android SDK and Java if available
+# Auto-detect Android SDK and compatible Java (AGP 8.7 requires Java 17–21)
 export ANDROID_HOME ?= $(firstword $(wildcard $(HOME)/Library/Android/sdk /opt/homebrew/share/android-commandlinetools /usr/local/share/android-sdk))
-ifeq ($(strip $(JAVA_HOME)),)
-  JAVA_CANDIDATE := $(firstword $(wildcard \
-    /opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home \
-    /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home \
-    /usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home \
-    /usr/local/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home \
-  ))
-  ifeq ($(strip $(JAVA_CANDIDATE)),)
-    JAVA_CANDIDATE := $(shell /usr/libexec/java_home -v 21 2>/dev/null || /usr/libexec/java_home -v 17 2>/dev/null)
-  endif
-  ifneq ($(strip $(JAVA_CANDIDATE)),)
-    export JAVA_HOME := $(JAVA_CANDIDATE)
-  endif
+ANDROID_JAVA_HOME := $(firstword $(wildcard \
+  /opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home \
+  /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home \
+  /usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home \
+  /usr/local/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home \
+))
+ifeq ($(strip $(ANDROID_JAVA_HOME)),)
+  ANDROID_JAVA_HOME := $(shell /usr/libexec/java_home -v 21 2>/dev/null || /usr/libexec/java_home -v 17 2>/dev/null)
 endif
+ANDROID_GRADLE_ENV := $(if $(ANDROID_JAVA_HOME),JAVA_HOME=$(ANDROID_JAVA_HOME))
 
 # Default target
 all: build test
@@ -101,13 +97,13 @@ build-android: ps-android-build
 test-android: ps-android-test
 
 ps-android-build:
-	cd android-app && ./gradlew assembleDebug
+	cd android-app && $(ANDROID_GRADLE_ENV) ./gradlew assembleDebug
 
 ps-android-test:
-	cd android-app && ./gradlew testDebugUnitTest
+	cd android-app && $(ANDROID_GRADLE_ENV) ./gradlew testDebugUnitTest
 
 ps-android-lint:
-	cd android-app && ./gradlew lintDebug
+	cd android-app && $(ANDROID_GRADLE_ENV) ./gradlew lintDebug
 
 # --- Quality Assurance & Pre-commit Hooks ---
 pre-commit-install:
