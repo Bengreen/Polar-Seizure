@@ -1,0 +1,35 @@
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: sward-warden
+spec:
+  hosts:
+    - sward.k8s
+  gateways:
+    - istio-ingress/k8s-gateway
+    - mesh # applies to all the sidecars in the mesh
+  http:
+    - name: keycloak
+      match:
+        - uri:
+            prefix: /auth
+      route:
+        - destination:
+            host: keycloak-keycloakx-http.auth.svc.cluster.local
+            port:
+              number: 80
+    - name: sward-warden-be
+      match:
+        - uri:
+            prefix: /sward
+      route:
+        - destination:
+            host: sward-warden-be
+    - name: sward-warden-fe
+      match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: sward-warden-fe-nginx-view

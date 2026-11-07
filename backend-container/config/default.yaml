@@ -1,0 +1,39 @@
+webservice:
+  address: "http://0.0.0.0:8080/sward"
+  forwarding_headers: []
+  cors:
+    allow_origins: []
+    allow_methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
+    allow_headers: ["content-type", "authorization", "x-user-role"]
+  timeout: "30s"
+  max_connections: 100
+database:
+  url:
+    url: postgres://localhost:5432/swarddb
+  max_connections: 10
+hams:
+  name: sw-be
+  version: "0.1.0"
+  start_active: true
+  addr: "0.0.0.0:8079"
+startup_checks:
+  fails: 5
+  timeout: "5s"
+  enabled: true
+runtime:
+  threads: 0
+  stack_size: 3000000
+  name: "default"
+debugging:
+  enable_dev_auth: true
+  fail_debug_delay: 0s
+  environment: "development"
+  log_level: "info"
+spatial:
+  official_boundary_api_url: null
+  official_boundary_api_key: null
+keycloak:
+  base_url: "http://keycloak-keycloakx-http.auth.svc.cluster.local/auth"
+  realm: "sw-dev"
+  client_id: "sward-warden-be"
+  client_secret: null

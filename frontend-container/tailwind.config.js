@@ -1,0 +1,76 @@
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: [
+    "./src/**/*.{html,ts}",
+  ],
+  darkMode: "class",
+  theme: {
+    extend: {
+      "colors": {
+        "surface-dim": "#dadad6",
+        "inverse-surface": "#2f312e",
+        "primary-fixed": "#bcf0ae",
+        "error": "#ba1a1a",
+        "tertiary-container": "#005484",
+        "on-primary-fixed-variant": "#23501e",
+        "surface-tint": "#3b6934",
+        "surface": "#faf9f5",
+        "on-surface": "#1a1c1a",
+        "surface-container-high": "#e8e8e4",
+        "surface-container-lowest": "#ffffff",
+        "on-primary-fixed": "#002201",
+        "surface-container": "#eeeeea",
+        "secondary-fixed": "#ffdbd0",
+        "surface-bright": "#faf9f5",
+        "on-tertiary-container": "#8dc8ff",
+        "on-primary-container": "#9dd090",
+        "outline-variant": "#c2c9bb",
+        "primary-container": "#2d5a27",
+        "secondary-container": "#fed3c7",
+        "tertiary-fixed-dim": "#96ccff",
+        "tertiary": "#003c60",
+        "on-secondary": "#ffffff",
+        "on-secondary-fixed": "#2c160e",
+        "inverse-primary": "#a1d494",
+        "on-secondary-container": "#795950",
+        "on-surface-variant": "#42493e",
+        "error-container": "#ffdad6",
+        "secondary": "#77574d",
+        "on-error-container": "#93000a",
+        "secondary-fixed-dim": "#e7bdb1",
+        "on-tertiary-fixed-variant": "#004a75",
+        "background": "#faf9f5",
+        "on-primary": "#ffffff",
+        "on-tertiary": "#ffffff",
+        "inverse-on-surface": "#f1f1ed",
+        "on-error": "#ffffff",
+        "surface-container-low": "#f4f4f0",
+        "on-background": "#1a1c1a",
+        "on-secondary-fixed-variant": "#5d4037",
+        "outline": "#72796e",
+        "primary-fixed-dim": "#a1d494",
+        "on-tertiary-fixed": "#001d32",
+        "surface-variant": "#e2e3df",
+        "surface-container-highest": "#e2e3df",
+        "primary": "#154212",
+        "tertiary-fixed": "#cee5ff"
+      },
+      "borderRadius": {
+        "DEFAULT": "0.125rem",
+        "lg": "0.25rem",
+        "xl": "0.5rem",
+        "full": "0.75rem"
+      },
+      "fontFamily": {
+        "headline": ["Work Sans"],
+        "display": ["Work Sans"],
+        "body": ["Inter"],
+        "label": ["Inter"]
+      }
+    },
+  },
+  plugins: [
+    require('@tailwindcss/forms'),
+    require('@tailwindcss/container-queries'),
+  ],
+}

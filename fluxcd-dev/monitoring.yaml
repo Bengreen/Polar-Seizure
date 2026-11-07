@@ -1,0 +1,99 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: dev-service
+  namespace: sward-warden-dev
+  labels:
+    release: prometheus-stack
+  annotations: {}
+spec:
+  selector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - kafka-chase
+          - service-capture-backend
+          - k8s-micro
+          - nginx-view
+          - push-cache-backend
+  endpoints:
+    - port: http-envoy-prom # Matches the name of the port in your POD
+      path: /stats/prometheus
+      interval: 30s
+# ---
+# apiVersion: monitoring.coreos.com/v1
+# kind: PodMonitor
+# metadata:
+#   name: service-cap
+#   namespace: dev
+#   labels:
+#     release: prometheus-stack
+#   annotations: {}
+# spec:
+#   podMetricsEndpoints:
+#     - path: /stats/prometheus
+#       portNumber: 15090
+#       relabelings:
+#         - action: replace
+#           regex: (\d+);(([A-Fa-f0-9]{1,4}::?){1,7}[A-Fa-f0-9]{1,4})
+#           replacement: "[$2]:$1"
+#           sourceLabels:
+#             - __meta_kubernetes_pod_annotation_prometheus_io_port
+#             - __meta_kubernetes_pod_ip
+#           targetLabel: __address__
+#         - action: replace
+#           regex: (\d+);((([0-9]+?)(\.|$)){4})
+#           replacement: $2:$1
+#           sourceLabels:
+#             - __meta_kubernetes_pod_annotation_prometheus_io_port
+#             - __meta_kubernetes_pod_ip
+#           targetLabel: __address__
+#   selector:
+#     matchLabels:
+#       app.kubernetes.io/name: service-capture-backend
+# ---
+# apiVersion: v1
+# kind: ServiceAccount
+# metadata:
+#   name: prometheus
+#   namespace: dev
+# ---
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: ClusterRole
+# metadata:
+#   name: prometheus
+# rules:
+#   - apiGroups: [""]
+#     resources:
+#       - nodes
+#       - services
+#       - endpoints
+#       - pods
+#     verbs:
+#       - get
+#       - list
+#       - watch
+#   - apiGroups: [""]
+#     resources:
+#       - configmaps
+#     verbs:
+#       - get
+#   - nonResourceURLs:
+#       - "/metrics"
+#     verbs:
+#       - get
+# ---
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: ClusterRoleBinding
+# metadata:
+#   name: prometheus
+# roleRef:
+#   apiGroup: rbac.authorization.k8s.io
+#   kind: ClusterRole
+#   name: prometheus
+# subjects:
+#   - kind: ServiceAccount
+#     name: prometheus
+#     namespace: dev

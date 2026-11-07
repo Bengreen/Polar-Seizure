@@ -1,0 +1,112 @@
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: polar-seizure
+spec:
+  interval: 10m
+  url: oci://ghcr.io/bengreen/polar-seizure/helm/polar-seizure
+  secretRef:
+    name: ghcr-docker-auth
+  ref:
+    semver: ">= 0.1.x-0"
+    semverFilter: .*-main-*
+---
+
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: polar-seizure
+spec:
+  releaseName: polar-seizure
+  chartRef:
+    kind: OCIRepository
+    name: polar-seizure
+  interval: 50m
+  install:
+    remediation:
+      retries: 3
+  values:
+    devsecops:
+      RequestAuthentication:
+        jwtRules:
+          - issuer: "https://ps-dev.polecatworks.com/auth/realms/ps-dev"
+            jwksUri: "http://keycloak-keycloakx-http.auth.svc.cluster.local/auth/realms/ps-dev/protocol/openid-connect/certs"
+            forwardOriginalToken: true
+            outputPayloadToHeader: "x-jwt-payload"
+      AuthorizationPolicy:
+        rules:
+          # Allow health checks & live sensor ingest without token
+          - to:
+              - operation:
+                  paths: ["/hams/alive", "/hams/ready", "/v0/hello", "/api/v1/telemetry/*", "/api/v1/watchdog/*"]
+          # Carer and Admin access for alert management & dashboard
+          - from:
+              - source:
+                  requestPrincipals: ["https://ps-dev.polecatworks.com/auth/realms/ps-dev/*"]
+            to:
+              - operation:
+                  methods: ["GET", "HEAD", "OPTIONS", "POST", "PUT", "DELETE"]
+                  paths: ["/api/v1/alerts/*", "/v0/*"]
+    imagePullSecrets:
+      - name: ghcr-docker-auth
+    env:
+      - name: RUST_LOG
+        value: info
+    image:
+      repository: ghcr.io/bengreen/polar-seizure-backend
+      tag: main
+      pullPolicy: Always
+    resources:
+      requests:
+        cpu: 10m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 512Mi
+    config:
+      webservice:
+        address: http://0.0.0.0:8080/ps
+        forwarding_headers: []
+        cors:
+          allow_origins: []
+          allow_methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
+          allow_headers: ["content-type", "authorization", "x-user-role"]
+        timeout: "30s"
+        max_connections: 200
+      database:
+        url:
+          url: postgresql://cnpg-db0-cluster-rw.dbs:5432/polar_seizure
+          username_file: persistence/db/connection/username
+          password_file: persistence/db/connection/password
+        max_connections: 10
+      runtime:
+        threads: 0
+        stack_size: 3000000
+        name: "default"
+      debugging:
+        fail_debug_delay: 60s
+        environment: "development"
+        enable_dev_auth: true
+        log_level: "info"
+    volumes:
+      - name: config
+        configMap:
+          name: '{{ include "polar-seizure.fullname" . }}-be'
+      - name: secrets
+        projected:
+          sources:
+            - secret:
+                name: db0-polar-seizure-user
+                items:
+                  - key: username
+                    path: persistence/db/connection/username
+                  - key: password
+                    path: persistence/db/connection/password
+    volumeMounts:
+      - name: config
+        mountPath: /etc/ps-be/config.yaml
+        subPath: config.yaml
+      - name: secrets
+        mountPath: /etc/ps-be/secrets

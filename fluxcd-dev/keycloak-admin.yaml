@@ -1,0 +1,32 @@
+# This file configures a Keycloak connection/client configuration for the EPAM Keycloak Operator in the dev namespace,
+# along with the required secrets management utilizing External Secrets Operator.
+#
+# Specifically, it does the following:
+# 1. Configures the EPAM Keycloak connection (`keycloak-sw-dev` Keycloak CR) in the `sward-warden-dev` namespace,
+#    authenticating via a service account secret.
+# 2. Automatically generates credentials for the admin service account using an ExternalSecret Password generator.
+# 3. Provisions a KeycloakClient (`sw-dev-admin-sa`) in the `master` realm under the `auth` namespace, which functions as
+#    a service account client with roles (manage-realm, manage-clients, manage-events, manage-users) on the target realm client.
+# 4. Uses a PushSecret to sync the generated admin service account credentials from the `auth` namespace to the `sward-warden-dev` namespace.
+#
+# Dependencies:
+# - EPAM Keycloak Operator (APIs `v1.edp.epam.com/v1`)
+# - External Secrets Operator (APIs `external-secrets.io/v1` and `external-secrets.io/v1alpha1`)
+# - A running Keycloak instance reachable at `http://keycloak-keycloakx-http.auth.svc.cluster.local/auth`
+# - A `KeycloakRealm` named `master` in Keycloak.
+# - A Password generator resource named `keycloak-password` in the `auth` namespace.
+# - A SecretStore named `push-secrets-to-sw-dev-ns` in the `auth` namespace.
+#
+# Before this can become active you need to create the sw-dev realm in Keycloak.
+# Once it is created then this set of CRDs will manage it.
+# Setup Keycloak and Keycloak Realm in the dev namespace
+---
+apiVersion: v1.edp.epam.com/v1
+kind: Keycloak
+metadata:
+  name: keycloak-sw-dev
+  namespace: sward-warden-dev
+spec:
+  adminType: serviceAccount
+  secret: keycloak-sw-dev-sa # Secret name # pragma: allowlist secret
+  url: http://keycloak-keycloakx-http.auth.svc.cluster.local/auth # Keycloak URL

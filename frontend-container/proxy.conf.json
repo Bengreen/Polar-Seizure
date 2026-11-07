@@ -1,0 +1,9 @@
+{
+  "/sward": {
+    "target": "http://localhost:8080",
+    "secure": false,
+    "pathRewrite": {},
+    "changeOrigin": true,
+    "logLevel": "debug"
+  }
+}

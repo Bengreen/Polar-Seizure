@@ -1,0 +1,65 @@
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: mfe-shell
+spec:
+  interval: 10m
+  url: oci://ghcr.io/polecatworks/mfe-shell/helm/nginx-view
+  ref:
+    semver: ">= 0.1.x-0"
+    semverFilter: .*-main
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: polar-seizure-fe
+spec:
+  releaseName: polar-seizure-fe
+  chartRef:
+    kind: OCIRepository
+    name: mfe-shell
+  interval: 50m
+  install:
+    remediation:
+      retries: 3
+  values:
+    image:
+      repository: ghcr.io/bengreen/polar-seizure-frontend
+      tag: main
+      pullPolicy: Always
+    imagePullSecrets:
+      - name: ghcr-docker-auth
+    resources:
+      requests:
+        cpu: 10m
+        memory: 128Mi
+      limits:
+        cpu: 100m
+        memory: 256Mi
+    env:
+      - name: SERVE_ROOT
+        value: /
+    config:
+      configs:
+        default.conf.template: |
+          map $http_origin $cors_origin {
+            default "";
+            "~^http://localhost(:\d+)?$" "$http_origin";
+          }
+
+          server {
+            listen 8080;
+            server_name localhost;
+            root /usr/share/nginx/html;
+
+            # Health Checks
+            location /alive { return 200; access_log off; }
+            location /ready { return 200; access_log off; }
+
+            location / {
+              try_files $uri $uri/ /index.html;
+              expires -1;
+              add_header Cache-Control "no-store, no-cache, must-revalidate, post-check=0, pre-check=0";
+            }
+          }

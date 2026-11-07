@@ -1,0 +1,56 @@
+/* ── Sidebar Nav Item ── */
+.sidebar-item {
+  color: #1a1c1a;
+}
+
+.sidebar-item.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.sidebar-item.sidebar-active {
+  background-color: #2d5a27;
+  color: #ffffff;
+}
+
+.dark .sidebar-item {
+  color: #ffffff;
+}
+
+/* ── Bottom Nav Item Base ── */
+.nav-item {
+  color: #1a1c1a;
+}
+
+.nav-item.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.nav-item .nav-icon {
+  font-size: 24px;
+  transition: font-variation-settings 0.2s ease;
+}
+
+/* Active state — dark green pill */
+.nav-item.nav-active {
+  background-color: #2d5a27;
+  color: #ffffff;
+  transform: scale(0.95);
+}
+
+.nav-item.nav-active .nav-icon {
+  font-variation-settings: 'FILL' 1;
+}
+
+/* Hover (non-active) */
+.nav-item:not(.nav-active):hover {
+  background-color: #f4f4f0;
+}
+
+.dark .nav-item {
+  color: #ffffff;
+}
+.dark .nav-item:not(.nav-active):hover {
+  background-color: #2d302d;
+}

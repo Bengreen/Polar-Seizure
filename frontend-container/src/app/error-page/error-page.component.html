@@ -1,0 +1,92 @@
+<div class="min-h-screen flex items-center justify-center bg-surface px-4 py-8">
+  <div class="max-w-lg w-full bg-surface-container-low rounded-3xl p-8 shadow-xl border border-outline-variant/30">
+    <!-- Icon & Header -->
+    <div class="text-center mb-6">
+      <div class="w-20 h-20 bg-error-container rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm">
+        <span class="material-symbols-outlined text-on-error-container text-4xl">
+          {{ isSyncError ? 'sync_problem' : 'error' }}
+        </span>
+      </div>
+      <div *ngIf="errorCode" class="inline-block px-3 py-1 bg-error-container/40 text-error font-mono text-xs font-bold rounded-full mb-2">
+        HTTP {{ errorCode }} {{ errorCode === 403 ? 'FORBIDDEN' : (errorCode === 401 ? 'UNAUTHORIZED' : '') }}
+      </div>
+      <h1 class="text-2xl font-black text-on-surface mb-2 font-['Work_Sans']">
+        {{ isSyncError ? 'Synchronization Issue' : 'Application Error' }}
+      </h1>
+      <p class="text-on-surface-variant text-sm font-medium leading-relaxed">
+        {{ errorMessage }}
+      </p>
+    </div>
+
+    <!-- Authenticated User Profile Summary Card -->
+    <div class="bg-surface-container rounded-2xl p-5 mb-6 border border-outline-variant/20">
+      <h2 class="text-xs font-bold text-outline uppercase tracking-wider mb-3 flex items-center gap-1.5">
+        <span class="material-symbols-outlined text-sm">account_circle</span>
+        Active Identity Context
+      </h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+        <div>
+          <span class="text-on-surface-variant block">User ID:</span>
+          <span class="font-mono text-on-surface font-semibold truncate block" [title]="userProfile.userId">
+            {{ userProfile.userId }}
+          </span>
+        </div>
+        <div>
+          <span class="text-on-surface-variant block">Username / Email:</span>
+          <span class="font-semibold text-on-surface truncate block" [title]="userProfile.username">
+            {{ userProfile.username }}
+          </span>
+        </div>
+        <div class="sm:col-span-2">
+          <span class="text-on-surface-variant block mb-1">Assigned Roles:</span>
+          <div class="flex flex-wrap gap-1">
+            <span *ngFor="let role of userProfile.roles" class="px-2 py-0.5 bg-secondary-container text-on-secondary-container rounded text-[10px] font-medium">
+              {{ role }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Countdown Timer & Visual Progress Bar for Sync Errors -->
+    <div *ngIf="isSyncError" class="mb-6 bg-surface-container-high rounded-2xl p-4 border border-outline-variant/30">
+      <div class="flex items-center justify-between text-xs font-bold text-on-surface mb-2">
+        <span class="flex items-center gap-1">
+          <span class="material-symbols-outlined text-sm animate-spin text-primary" *ngIf="isRetrying">sync</span>
+          {{ isRetrying ? 'Retrying Synchronization...' : 'Next Automatic Retry:' }}
+        </span>
+        <span class="font-mono text-primary font-bold text-sm" *ngIf="!isRetrying">
+          {{ countdown }}s
+        </span>
+      </div>
+      <!-- Animated Progress Bar -->
+      <div class="w-full bg-outline-variant/30 h-2.5 rounded-full overflow-hidden">
+        <div
+          class="h-full bg-primary transition-all duration-1000 ease-linear rounded-full"
+          [style.width.%]="progressPercentage"
+        ></div>
+      </div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="flex flex-col gap-3">
+      <button
+        *ngIf="isSyncError"
+        (click)="retrySync()"
+        [disabled]="isRetrying"
+        class="w-full py-3.5 bg-primary text-on-primary font-bold tracking-wide active:scale-[0.98] transition-all rounded-xl flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
+      >
+        <span class="material-symbols-outlined text-lg" [class.animate-spin]="isRetrying">refresh</span>
+        {{ isRetrying ? 'Syncing...' : 'Retry Sync Now' }}
+      </button>
+
+      <button
+        (click)="goHome()"
+        class="w-full py-3.5 bg-surface-container-highest text-on-surface font-semibold tracking-wide active:scale-[0.98] transition-all rounded-xl border border-outline-variant/40 hover:bg-outline-variant/20 flex items-center justify-center gap-2"
+      >
+        <span class="material-symbols-outlined text-lg">{{ isAuthError ? 'login' : 'home' }}</span>
+        {{ isAuthError ? 'Return to Login' : 'Return to Home' }}
+      </button>
+    </div>
+  </div>
+</div>

@@ -1,10 +1,27 @@
+# Node & Web
 node_modules/
 build/
 dist/
 dev-dist/
 .aistudio/
+.tokensave/
 coverage/
 .DS_Store
 *.log
 .env*
 !.env.example
+
+# Rust
+target/
+**/*.rs.bk
+Cargo.lock
+
+# Android & Gradle
+.gradle/
+local.properties
+**/build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab

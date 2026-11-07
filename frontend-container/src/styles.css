@@ -1,0 +1,43 @@
+@import '@fontsource/work-sans/index.css';
+@import '@fontsource/inter/index.css';
+@import 'material-symbols/outlined.css';
+@import 'leaflet-geosearch/dist/geosearch.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.material-symbols-outlined {
+    font-family: 'Material Symbols Outlined';
+    font-weight: normal;
+    font-style: normal;
+    font-size: 24px;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    display: inline-block;
+    white-space: nowrap;
+    word-wrap: normal;
+    direction: ltr;
+    -webkit-font-feature-settings: 'liga';
+    -webkit-font-smoothing: antialiased;
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #faf9f5;
+    min-height: max(884px, 100dvh);
+    @apply text-base lg:text-lg;
+}
+
+h1, h2, h3, .headline {
+    font-family: 'Work Sans', sans-serif;
+}
+
+/* Adaptive Scaling */
+@layer components {
+  .card-adaptive {
+    @apply rounded-xl lg:rounded-3xl transition-all duration-500;
+  }
+}

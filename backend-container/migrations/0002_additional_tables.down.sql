@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS fertilisation_plans CASCADE;
+DROP TABLE IF EXISTS soil_analyses CASCADE;

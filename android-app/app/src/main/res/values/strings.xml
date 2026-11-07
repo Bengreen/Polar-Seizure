@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Polar-Seizure</string>
+    <string name="service_notification_title">Polar Seizure Detector Active</string>
+    <string name="service_notification_desc">Continuous BLE telemetry monitoring...</string>
+    <string name="channel_monitoring_name">Seizure Monitoring Service</string>
+    <string name="channel_alarms_name">Seizure Emergency Alarms</string>
+</resources>

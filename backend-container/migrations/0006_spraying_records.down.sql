@@ -1,0 +1,3 @@
+ALTER TABLE events DROP COLUMN IF EXISTS bbch_growth_stage;
+ALTER TABLE events DROP COLUMN IF EXISTS eppo_code;
+ALTER TABLE events DROP COLUMN IF EXISTS mapp_number;

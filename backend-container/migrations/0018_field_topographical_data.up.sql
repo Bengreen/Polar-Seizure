@@ -1,0 +1,6 @@
+ALTER TABLE fields
+    ADD COLUMN min_elevation DOUBLE PRECISION,
+    ADD COLUMN max_elevation DOUBLE PRECISION,
+    ADD COLUMN mean_elevation DOUBLE PRECISION,
+    ADD COLUMN average_slope DOUBLE PRECISION,
+    ADD COLUMN max_slope DOUBLE PRECISION;

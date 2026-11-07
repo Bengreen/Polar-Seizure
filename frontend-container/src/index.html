@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en" class="light">
+<head>
+  <meta charset="utf-8">
+  <title>SwardWarden</title>
+  <base href="/">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#1976d2">
+  <script>
+    window.onerror = function(message, source, lineno, colno, error) {
+      var div = document.createElement('div');
+      div.id = 'diagnostic-error';
+      div.style.position = 'fixed';
+      div.style.top = '0';
+      div.style.left = '0';
+      div.style.width = '100%';
+      div.style.backgroundColor = 'red';
+      div.style.color = 'white';
+      div.style.zIndex = '99999';
+      div.style.padding = '10px';
+      div.style.fontSize = '12px';
+      div.style.fontFamily = 'monospace';
+      div.style.whiteSpace = 'pre-wrap';
+      div.innerText = 'UNCAUGHT ERROR: ' + message + '\n' + (error ? error.stack : '');
+      document.body.appendChild(div);
+    };
+    window.onunhandledrejection = function(event) {
+      var div = document.createElement('div');
+      div.id = 'diagnostic-rejection';
+      div.style.position = 'fixed';
+      div.style.top = '50px';
+      div.style.left = '0';
+      div.style.width = '100%';
+      div.style.backgroundColor = 'darkred';
+      div.style.color = 'white';
+      div.style.zIndex = '99999';
+      div.style.padding = '10px';
+      div.style.fontSize = '12px';
+      div.style.fontFamily = 'monospace';
+      div.style.whiteSpace = 'pre-wrap';
+      var reason = event.reason;
+      div.innerText = 'UNHANDLED REJECTION: ' + (reason ? (reason.message || reason) : 'unknown') + '\n' + (reason && reason.stack ? reason.stack : '');
+      document.body.appendChild(div);
+    };
+  </script>
+</head>
+<body class="bg-surface font-body text-on-surface min-h-screen flex flex-col pb-32">
+  <app-root></app-root>
+  <noscript>Please enable JavaScript to continue using this application.</noscript>
+</body>
+</html>

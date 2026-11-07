@@ -1,0 +1,9 @@
+{
+  "apiPath": "/sward/v0",
+  "logLevel": "INFO",
+  "otel": {
+    "collectorUrl": "http://localhost:4318",
+    "logLevel": "info"
+  },
+  "auth": null
+}

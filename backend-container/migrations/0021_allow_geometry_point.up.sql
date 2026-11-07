@@ -1,0 +1,1 @@
+ALTER TABLE fields ALTER COLUMN geom TYPE GEOMETRY(Geometry, 4326);

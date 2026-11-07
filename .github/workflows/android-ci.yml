@@ -1,0 +1,83 @@
+name: Android App CI/CD
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  merge_group:
+    branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-paths:
+    runs-on: ubuntu-latest
+    outputs:
+      android: ${{ steps.filter.outputs.android }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          ref: ${{ github.event.merge_group.base_ref || github.ref }}
+          filters: |
+            android:
+              - 'android-app/**'
+              - '.github/workflows/android-ci.yml'
+
+  test-and-build:
+    needs: check-paths
+    if: needs.check-paths.outputs.android == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine Android Content SHA
+        id: android-content
+        run: |
+          ANDROID_SHA=$(git log -1 --format=%H -- android-app/ .github/workflows/android-ci.yml)
+          echo "ANDROID_SHA=$ANDROID_SHA" >> $GITHUB_OUTPUT
+          SHORT_SHA=$(echo "$ANDROID_SHA" | cut -c1-7)
+          echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_OUTPUT
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x android-app/gradlew
+        working-directory: android-app
+
+      - name: Run Unit Tests & Lint
+        run: ./gradlew testDebugUnitTest
+        working-directory: android-app
+
+      - name: Build Android APK
+        if: github.event_name != 'pull_request'
+        run: ./gradlew assembleDebug
+        working-directory: android-app
+
+      - name: Package & Label SHA Artifact
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p artifacts
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/polar-seizure-app-sha-${{ steps.android-content.outputs.SHORT_SHA }}.apk
+        working-directory: android-app
+
+      - name: Upload Android Build Artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: polar-seizure-apk-sha-${{ steps.android-content.outputs.SHORT_SHA }}
+          path: android-app/artifacts/polar-seizure-app-sha-${{ steps.android-content.outputs.SHORT_SHA }}.apk
+          retention-days: 30
