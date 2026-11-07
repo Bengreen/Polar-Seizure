@@ -1,6 +1,101 @@
 <!doctype html>
 <html lang="en" class="dark">
   <head>
+    <script>
+      (function() {
+        // AI Studio Environment: HMR is disabled, suppress harmless Vite WebSocket disconnect notices
+        var origConsoleError = console.error;
+        console.error = function() {
+          var msg = Array.prototype.slice.call(arguments).map(function(a) {
+            return String(a && a.message ? a.message : a || '');
+          }).join(' ');
+          if (msg.indexOf('WebSocket') !== -1 && (msg.indexOf('closed without opened') !== -1 || msg.indexOf('[vite]') !== -1)) {
+            return;
+          }
+          if (msg.indexOf('WebSocket closed without opened') !== -1) {
+            return;
+          }
+          origConsoleError.apply(console, arguments);
+        };
+
+        var OrigWebSocket = window.WebSocket;
+        if (OrigWebSocket) {
+          window.WebSocket = function(url, protocols) {
+            var isViteHmr = false;
+            if (typeof protocols === 'string' && (protocols.indexOf('vite-hmr') !== -1 || protocols.indexOf('vite-ping') !== -1)) {
+              isViteHmr = true;
+            } else if (Array.isArray(protocols) && protocols.some(function(p) { return p.indexOf('vite-hmr') !== -1 || p.indexOf('vite-ping') !== -1; })) {
+              isViteHmr = true;
+            } else if (typeof url === 'string' && (url.indexOf('token=') !== -1 || url.indexOf('vite') !== -1)) {
+              isViteHmr = true;
+            }
+
+            var ws;
+            try {
+              ws = new OrigWebSocket(url, protocols);
+            } catch (err) {
+              if (isViteHmr) {
+                // Return mock EventTarget socket
+                var mockWs = new EventTarget();
+                mockWs.readyState = 1;
+                mockWs.close = function() {};
+                mockWs.send = function() {};
+                setTimeout(function() {
+                  mockWs.dispatchEvent(new Event('open'));
+                }, 0);
+                return mockWs;
+              }
+              throw err;
+            }
+
+            if (isViteHmr) {
+              var opened = false;
+              ws.addEventListener('open', function() { opened = true; });
+              var origAddEventListener = ws.addEventListener.bind(ws);
+              ws.addEventListener = function(type, listener, options) {
+                if (type === 'close') {
+                  var wrappedClose = function(event) {
+                    if (!opened) {
+                      opened = true;
+                      try {
+                        ws.dispatchEvent(new Event('open'));
+                      } catch (_) {}
+                    }
+                    if (typeof listener === 'function') {
+                      listener.call(this, event);
+                    } else if (listener && typeof listener.handleEvent === 'function') {
+                      listener.handleEvent(event);
+                    }
+                  };
+                  return origAddEventListener(type, wrappedClose, options);
+                }
+                return origAddEventListener(type, listener, options);
+              };
+            }
+            return ws;
+          };
+          window.WebSocket.prototype = OrigWebSocket.prototype;
+          window.WebSocket.CONNECTING = OrigWebSocket.CONNECTING;
+          window.WebSocket.OPEN = OrigWebSocket.OPEN;
+          window.WebSocket.CLOSING = OrigWebSocket.CLOSING;
+          window.WebSocket.CLOSED = OrigWebSocket.CLOSED;
+        }
+
+        window.addEventListener('error', function(e) {
+          if (e.message && (e.message.indexOf('WebSocket') !== -1 || e.message.indexOf('closed without opened') !== -1)) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+          }
+        }, true);
+        window.addEventListener('unhandledrejection', function(e) {
+          var reason = String(e.reason && e.reason.message ? e.reason.message : e.reason || '');
+          if (reason.indexOf('WebSocket') !== -1 || reason.indexOf('closed without opened') !== -1) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+          }
+        }, true);
+      })();
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>OpenSeizureDetector Mobile (Polar BLE)</title>

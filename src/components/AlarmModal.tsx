@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { DetectorState, CarerSettings } from '../types/seizure';
 import { DispatchResult } from '../services/carerAlerts';
 import {
@@ -14,8 +14,8 @@ import {
   Radio,
   Send,
   ShieldAlert,
-  Smartphone,
   Volume2,
+  VolumeX,
   XCircle,
 } from 'lucide-react';
 
@@ -28,8 +28,10 @@ interface AlarmModalProps {
   seizureDurationSeconds: number;
   dispatchResults: DispatchResult[];
   carerSettings: CarerSettings;
+  isSirenPlaying?: boolean;
   onCancelWarning: () => void;
   onSilenceAlarm: () => void;
+  onMuteSirenOnly?: () => void;
   onResolveFault: () => void;
 }
 
@@ -42,8 +44,10 @@ export const AlarmModal: React.FC<AlarmModalProps> = ({
   seizureDurationSeconds,
   dispatchResults,
   carerSettings,
+  isSirenPlaying = false,
   onCancelWarning,
   onSilenceAlarm,
+  onMuteSirenOnly,
   onResolveFault,
 }) => {
   if (state === 'IDLE' || state === 'MONITORING_SAFE') {
@@ -55,14 +59,14 @@ export const AlarmModal: React.FC<AlarmModalProps> = ({
   const isDeadman = state === 'FAULT_DISCONNECTED' || state === 'FAULT_BATTERY';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
       <div
         className={`w-full max-w-lg rounded-3xl p-6 sm:p-8 shadow-2xl border transition-all ${
           isAlarm
-            ? 'bg-rose-950/90 border-rose-600 ring-4 ring-rose-500/20'
+            ? 'bg-rose-950/95 border-rose-500 ring-4 ring-rose-500/30'
             : isWarning
-            ? 'bg-amber-950/90 border-amber-500 ring-4 ring-amber-500/20'
-            : 'bg-orange-950/90 border-orange-600 ring-4 ring-orange-500/20'
+            ? 'bg-amber-950/95 border-amber-500 ring-4 ring-amber-500/20'
+            : 'bg-orange-950/95 border-orange-600 ring-4 ring-orange-500/20'
         }`}
       >
         {/* State Banner */}
@@ -87,11 +91,11 @@ export const AlarmModal: React.FC<AlarmModalProps> = ({
 
           <div className="flex flex-col">
             <span className="text-xs uppercase tracking-wider font-mono font-semibold text-slate-400">
-              OpenSeizureDetector Status
+              OpenSeizureDetector Emergency Alert
             </span>
             <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">
               {isAlarm
-                ? 'SEIZURE DETECTED — CARERS ALERTED'
+                ? 'SEIZURE DETECTED — SIREN SOUNDING'
                 : isWarning
                 ? 'POSSIBLE SEIZURE TREMOR'
                 : 'DEAD MAN WATCHDOG FAULT'}
@@ -110,7 +114,7 @@ export const AlarmModal: React.FC<AlarmModalProps> = ({
                 {countdownSeconds}s
               </div>
               <div className="text-xs text-slate-300">
-                Sustained rhythmic tremor detected ({peakFrequency.toFixed(1)} Hz). If you are okay, tap below to cancel carer alerts.
+                Sustained rhythmic tremor detected ({peakFrequency.toFixed(1)} Hz). If you are okay, tap below to cancel carer alerts and loud siren.
               </div>
 
               {/* Progress bar */}
@@ -133,34 +137,56 @@ export const AlarmModal: React.FC<AlarmModalProps> = ({
           </div>
         )}
 
-        {/* Alarm Phase: Full Seizure Active */}
+        {/* Alarm Phase: Full Seizure Active with Loud Siren */}
         {isAlarm && (
           <div className="mb-6 space-y-4">
-            <div className="bg-slate-950/80 p-4 rounded-2xl border border-rose-500/50">
+            {/* Loud Siren Visual Soundwave Indicator */}
+            <div className="bg-slate-950/90 p-4 rounded-2xl border border-rose-500/60 shadow-inner">
               <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-3">
-                <span className="text-xs font-mono uppercase text-rose-400 font-semibold flex items-center gap-1.5">
-                  <Volume2 className="w-4 h-4 animate-pulse" /> Emergency Siren Active
-                </span>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex items-center justify-center">
+                    <span className="w-3 h-3 rounded-full bg-rose-500 animate-ping absolute" />
+                    <Volume2 className="w-4 h-4 text-rose-400 relative z-10 animate-pulse" />
+                  </div>
+                  <span className="text-xs font-mono uppercase text-rose-400 font-bold">
+                    {isSirenPlaying ? 'High-Decibel Medical Siren Active' : 'Siren Muted'}
+                  </span>
+                </div>
+
                 <span className="text-xs font-mono text-slate-300 flex items-center gap-1">
                   <Clock className="w-3.5 h-3.5 text-slate-400" />
-                  Duration: <strong className="text-white tabular-nums">{seizureDurationSeconds}s</strong>
+                  Seizure: <strong className="text-white tabular-nums">{seizureDurationSeconds}s</strong>
                 </span>
               </div>
 
+              {/* Animated Soundwave bars */}
+              {isSirenPlaying && (
+                <div className="flex items-center justify-center gap-1.5 py-2.5 mb-2 bg-rose-950/30 rounded-xl border border-rose-900/30">
+                  <span className="w-1.5 h-6 bg-rose-500 rounded-full animate-bounce [animation-delay:-0.4s]" />
+                  <span className="w-1.5 h-10 bg-rose-400 rounded-full animate-bounce [animation-delay:-0.2s]" />
+                  <span className="w-1.5 h-12 bg-rose-300 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                  <span className="w-1.5 h-8 bg-rose-400 rounded-full animate-bounce [animation-delay:-0.1s]" />
+                  <span className="w-1.5 h-11 bg-rose-500 rounded-full animate-bounce [animation-delay:-0.5s]" />
+                  <span className="w-1.5 h-7 bg-rose-400 rounded-full animate-bounce [animation-delay:-0.25s]" />
+                  <span className="w-1.5 h-9 bg-rose-300 rounded-full animate-bounce [animation-delay:-0.35s]" />
+                  <span className="w-1.5 h-5 bg-rose-500 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                </div>
+              )}
+
               <div className="text-xs text-slate-300 space-y-1">
                 <p>
-                  High-amplitude 3–8 Hz clonic convulsions verified (Tremor Ratio: <strong>{(peakRatio * 100).toFixed(0)}%</strong>).
+                  High-amplitude 3–8 Hz clonic convulsions verified (Tremor Ratio: <strong>{(peakRatio * 100).toFixed(0)}%</strong> at <strong>{peakFrequency.toFixed(1)} Hz</strong>).
                 </p>
                 <p className="text-[11px] text-slate-400">
-                  Carers are being notified with location and episode timestamp.
+                  Siren sounding at full volume to awaken room occupants and attract carers.
                 </p>
               </div>
             </div>
 
             {/* Carer Notification Logs */}
-            <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800/80 max-h-40 overflow-y-auto">
+            <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800/80 max-h-36 overflow-y-auto">
               <div className="text-[11px] font-mono text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
-                <Send className="w-3 h-3 text-sky-400" /> Escalation Dispatch Log
+                <Send className="w-3 h-3 text-sky-400" /> Carer Escalation Log
               </div>
 
               <div className="space-y-1.5 text-xs font-mono">
@@ -168,25 +194,40 @@ export const AlarmModal: React.FC<AlarmModalProps> = ({
                   dispatchResults.map((r, i) => (
                     <div key={i} className="flex items-center justify-between text-slate-300">
                       <span className="truncate pr-2">{r.message}</span>
-                      <span className={r.success ? 'text-emerald-400 shrink-0' : 'text-rose-400 shrink-0'}>
+                      <span className={r.success ? 'text-emerald-400 shrink-0 font-semibold' : 'text-rose-400 shrink-0'}>
                         {r.success ? 'Sent' : 'Failed'}
                       </span>
                     </div>
                   ))
                 ) : (
-                  <div className="text-slate-500 text-xs">Dispatching SMS & Push to carers...</div>
+                  <div className="text-slate-500 text-xs">Dispatching SMS &amp; Push to carers...</div>
                 )}
               </div>
             </div>
 
-            {/* Primary Action Button */}
-            <button
-              onClick={onSilenceAlarm}
-              className="w-full h-14 rounded-2xl bg-rose-600 hover:bg-rose-500 active:scale-[0.98] text-white font-bold text-base flex items-center justify-center gap-2 shadow-lg shadow-rose-600/30 transition-transform"
-            >
-              <BellOff className="w-5 h-5" />
-              <span>Silence Siren & Resolve Episode</span>
-            </button>
+            {/* Action Buttons: Mute Siren Only vs Resolve Full Episode */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {isSirenPlaying && onMuteSirenOnly && (
+                <button
+                  onClick={onMuteSirenOnly}
+                  className="h-13 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-[0.98] text-slate-200 font-semibold text-xs flex items-center justify-center gap-2 border border-slate-700 transition-transform"
+                  title="Silence the loud siren while keeping the seizure timer and carer alert active"
+                >
+                  <VolumeX className="w-4 h-4 text-amber-400" />
+                  <span>Mute Siren Only</span>
+                </button>
+              )}
+
+              <button
+                onClick={onSilenceAlarm}
+                className={`h-13 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-[0.98] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-rose-600/30 transition-transform ${
+                  isSirenPlaying && onMuteSirenOnly ? '' : 'sm:col-span-2'
+                }`}
+              >
+                <BellOff className="w-4 h-4" />
+                <span>Silence Siren &amp; Resolve Episode</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -198,7 +239,7 @@ export const AlarmModal: React.FC<AlarmModalProps> = ({
                 Monitoring Suspended — Fail-Safe Activated
               </h3>
               <p className="text-xs text-slate-300 leading-relaxed mb-3">
-                No telemetry packets received for over 30 seconds, or battery has depleted. In seizure monitoring, loss of signal is treated as a critical fault.
+                No telemetry packets received for over 30 seconds, or battery has depleted. In seizure monitoring, loss of signal is treated as a critical fault and sounds an alert.
               </p>
               <div className="text-[11px] text-slate-400 bg-slate-900 p-2.5 rounded-lg border border-slate-800">
                 <strong>Corrective Actions:</strong>
@@ -215,7 +256,7 @@ export const AlarmModal: React.FC<AlarmModalProps> = ({
               className="w-full h-14 rounded-2xl bg-orange-600 hover:bg-orange-500 active:scale-[0.98] text-white font-bold text-base flex items-center justify-center gap-2 shadow-lg shadow-orange-600/30 transition-transform"
             >
               <XCircle className="w-5 h-5" />
-              <span>Acknowledge Fault & Reconnect</span>
+              <span>Acknowledge Fault &amp; Reconnect</span>
             </button>
           </div>
         )}

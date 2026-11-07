@@ -5,11 +5,21 @@
 
 export interface SensorSample {
   timestamp: number;
-  x: number; // m/s² or Gs
+  x: number; // m/s² or Gs (ACC) or deg/s (GYRO)
   y: number;
   z: number;
   magnitude: number;
+  sensorType?: 'GYRO' | 'ACC';
   hr?: number; // Heart rate in BPM if available from Polar
+  rawX?: number; // Raw integer from packet (e.g. -253)
+  rawY?: number;
+  rawZ?: number;
+  rawHex?: string; // Hex snippet of raw packet
+  packetNumber?: number; // Monotonic packet counter
+  frameType?: number;
+  samplesInPacket?: number; // Number of samples extracted from this single packet
+  actionName?: string; // Name of stream or action (e.g. 'Kickstart [02 02]', 'Unlock 25Hz', 'Continuous 25Hz')
+  actionSampleIndex?: number; // Running count of samples captured within current stream or action
 }
 
 export interface SpectrumAnalysis {
@@ -58,6 +68,7 @@ export interface CarerSettings {
   enablePush: boolean;
   enableSiren: boolean;
   sirenVolume: number; // 0 to 1
+  sirenProfile?: 'WAIL' | 'HILO' | 'STROBE'; // Sound profile for attention-drawing
   twilioAccountSid: string;
   twilioAuthToken: string;
   twilioFromNumber: string;
@@ -88,4 +99,12 @@ export interface AlarmEvent {
   peakPower: number;
   carersNotified: string[];
   resolvedAt?: number;
+}
+
+export interface BatteryHistoryPoint {
+  timestamp: number;
+  timeStr: string;
+  phoneBattery: number;
+  wearableBattery: number;
+  isPhoneCharging?: boolean;
 }

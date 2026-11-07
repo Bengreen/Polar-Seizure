@@ -10,11 +10,19 @@ import { BarChart3, AlertCircle, CheckCircle2 } from 'lucide-react';
 interface SpectrumVisualizerProps {
   analysis: SpectrumAnalysis | null;
   config: DetectionConfig;
+  sampleCount?: number;
+  measuredSampleRate?: number;
+  isBleConnected?: boolean;
+  onStartSimulator?: () => void;
 }
 
 export const SpectrumVisualizer: React.FC<SpectrumVisualizerProps> = ({
   analysis,
   config,
+  sampleCount = 0,
+  measuredSampleRate = 25.0,
+  isBleConnected = false,
+  onStartSimulator,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -181,6 +189,43 @@ export const SpectrumVisualizer: React.FC<SpectrumVisualizerProps> = ({
         <div className="absolute top-2.5 left-12 text-[11px] font-mono bg-slate-900/85 backdrop-blur-sm px-2.5 py-1 rounded-md border border-slate-800 text-slate-300">
           Shaded zone: <span className="text-rose-400 font-semibold">3–8 Hz Clonic Region of Interest</span>
         </div>
+
+        {/* Empty / Buffer Filling / Epoch Mode Overlay */}
+        {!analysis && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center bg-slate-950/85 backdrop-blur-xs space-y-2">
+            <div className="w-8 h-8 rounded-full bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-400">
+              <BarChart3 className="w-4 h-4" />
+            </div>
+            <div className="max-w-md">
+              <div className="text-xs sm:text-sm font-semibold text-white mb-1">
+                {measuredSampleRate < 2.0 && isBleConnected ? (
+                  <span className="text-amber-300">Device in 8-Second Activity Epoch Mode ({measuredSampleRate.toFixed(2)} Hz)</span>
+                ) : (
+                  <span>Awaiting {config.windowSize} Samples for FFT Window ({sampleCount}/{config.windowSize})</span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-400 leading-normal">
+                {measuredSampleRate < 2.0 && isBleConnected ? (
+                  <>
+                    Polar Loop 2 transmits periodic activity records every ~8s. Real-time 3–8 Hz FFT requires continuous &ge;16 Hz stream. Live movement is actively captured via &Delta;a in the Motion Data Table above.
+                  </>
+                ) : (
+                  <>
+                    OpenSeizureDetector computes Radix-2 FFT spectral density on 128 continuous samples to detect clonic tremors.
+                  </>
+                )}
+              </p>
+            </div>
+            {onStartSimulator && (
+              <button
+                onClick={onStartSimulator}
+                className="mt-1 px-3 py-1.5 rounded-lg bg-rose-600/90 hover:bg-rose-500 text-white font-medium text-xs shadow-md transition-colors flex items-center gap-1.5"
+              >
+                <span>Test 3–8 Hz FFT in Simulator (5 Hz Clonic)</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* OpenSeizureDetector Primary Metrics */}

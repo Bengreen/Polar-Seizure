@@ -16,8 +16,11 @@ import {
   Settings,
   ShieldAlert,
   ShieldCheck,
-  Sun,
+  Volume2,
+  VolumeX,
   Moon,
+  Sun,
+  FolderGit2,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -26,6 +29,11 @@ interface HeaderProps {
   setActiveTab: (tab: 'monitor' | 'diagnostics' | 'about') => void;
   onOpenSettings: () => void;
   onTriggerTestAlarm: () => void;
+  isSirenPlaying?: boolean;
+  onToggleSiren?: () => void;
+  isNightMode?: boolean;
+  onToggleNightMode?: () => void;
+  onOpenGitSync?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -34,6 +42,11 @@ export const Header: React.FC<HeaderProps> = ({
   setActiveTab,
   onOpenSettings,
   onTriggerTestAlarm,
+  isSirenPlaying = false,
+  onToggleSiren,
+  isNightMode = false,
+  onToggleNightMode,
+  onOpenGitSync,
 }) => {
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
   const [showIOSGuide, setShowIOSGuide] = useState(false);
@@ -117,7 +130,7 @@ export const Header: React.FC<HeaderProps> = ({
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            Telemetry & FFT
+            Telemetry &amp; FFT
           </button>
           <button
             onClick={() => setActiveTab('diagnostics')}
@@ -127,7 +140,7 @@ export const Header: React.FC<HeaderProps> = ({
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            Dead Man Diagnostics
+            Dead Man &amp; Cloud Tracking
           </button>
           <button
             onClick={() => setActiveTab('about')}
@@ -137,12 +150,53 @@ export const Header: React.FC<HeaderProps> = ({
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            Algorithm & OSD Guide
+            Algorithm &amp; OSD Guide
           </button>
         </nav>
 
         {/* Zone 3: Primary Action & Controls */}
         <div className="flex items-center gap-2 shrink-0">
+          {/* Active Loud Siren Toggle / Indicator */}
+          {onToggleSiren && (
+            <button
+              onClick={onToggleSiren}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap active:scale-95 ${
+                isSirenPlaying
+                  ? 'bg-rose-600 text-white animate-pulse shadow-lg shadow-rose-600/40 ring-2 ring-rose-400'
+                  : 'bg-slate-900 border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white'
+              }`}
+              title={isSirenPlaying ? 'Click to silence active loud siren' : 'Play high-decibel test siren to verify acoustic volume'}
+            >
+              {isSirenPlaying ? (
+                <>
+                  <VolumeX className="w-3.5 h-3.5" />
+                  <span>Mute Siren</span>
+                </>
+              ) : (
+                <>
+                  <Volume2 className="w-3.5 h-3.5 text-rose-400" />
+                  <span className="hidden sm:inline">Test Siren</span>
+                </>
+              )}
+            </button>
+          )}
+
+          {/* OLED Night Blackout Saver */}
+          {onToggleNightMode && (
+            <button
+              onClick={onToggleNightMode}
+              className={`p-2 rounded-lg transition-colors text-xs font-mono flex items-center gap-1 ${
+                isNightMode
+                  ? 'bg-amber-950/60 border border-amber-800 text-amber-300'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+              }`}
+              title="Toggle OLED Night Blackout Mode to save up to 60% battery"
+            >
+              <Moon className="w-3.5 h-3.5" />
+              <span className="hidden lg:inline text-[11px]">{isNightMode ? 'Night On' : 'Night'}</span>
+            </button>
+          )}
+
           {/* PWA Install Button */}
           {isInstallable && (
             <button
@@ -165,21 +219,33 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          {/* Test Emergency Siren Trigger */}
+          {/* Test Emergency Seizure Alert Trigger */}
           <button
             onClick={onTriggerTestAlarm}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-rose-900/60 bg-rose-950/40 text-rose-300 hover:bg-rose-900/50 hover:text-white transition-colors whitespace-nowrap"
             title="Simulate immediate seizure alarm for carer testing"
           >
             <Bell className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Test Alert</span>
+            <span className="hidden sm:inline">Simulate Alarm</span>
           </button>
+
+          {/* GitHub Sync Button */}
+          {onOpenGitSync && (
+            <button
+              onClick={onOpenGitSync}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-slate-700 bg-slate-900 text-slate-300 hover:text-white hover:bg-slate-800 transition-colors whitespace-nowrap"
+              title="Sync repository with GitHub"
+            >
+              <FolderGit2 className="w-3.5 h-3.5 text-sky-400" />
+              <span className="hidden md:inline">GitHub</span>
+            </button>
+          )}
 
           {/* Settings Trigger */}
           <button
             onClick={onOpenSettings}
             className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors"
-            title="Configure Carers & Sensitivity"
+            title="Configure Carers, Loud Siren &amp; Battery Settings"
           >
             <Settings className="w-4 h-4" />
           </button>

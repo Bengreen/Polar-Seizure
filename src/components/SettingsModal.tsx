@@ -15,10 +15,13 @@ import {
   Trash2,
   Users,
   Volume2,
+  VolumeX,
   X,
   Battery,
   Shield,
+  Zap,
 } from 'lucide-react';
+import { audioAlarm } from '../services/audioAlarm';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -53,6 +56,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [newName, setNewName] = useState('');
   const [newPhone, setNewPhone] = useState('');
   const [newRelationship, setNewRelationship] = useState('Primary Carer');
+  const [isTestingSiren, setIsTestingSiren] = useState(false);
+
+  const handleToggleTestSiren = (profile?: 'WAIL' | 'HILO' | 'STROBE') => {
+    if (isTestingSiren) {
+      audioAlarm.stop();
+      setIsTestingSiren(false);
+    } else {
+      const chosenProfile = profile || settings.sirenProfile || 'WAIL';
+      audioAlarm.startSeizureSiren(settings.sirenVolume ?? 1.0, chosenProfile);
+      setIsTestingSiren(true);
+    }
+  };
 
   const handleAddContact = () => {
     if (!newName.trim() || !newPhone.trim()) return;
@@ -78,7 +93,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }));
   };
 
+  const handleClose = () => {
+    if (isTestingSiren) {
+      audioAlarm.stop();
+      setIsTestingSiren(false);
+    }
+    onClose();
+  };
+
   const handleSaveAll = () => {
+    if (isTestingSiren) {
+      audioAlarm.stop();
+      setIsTestingSiren(false);
+    }
     onSaveCarerSettings(settings);
     onSaveDetectionConfig(config);
     onClose();
@@ -96,7 +123,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </h2>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
           >
             <X className="w-5 h-5" />
@@ -281,15 +308,117 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </label>
 
                   <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between">
-                    <span className="text-slate-400">Test Notifications</span>
+                    <span className="text-slate-400">Push &amp; Haptics</span>
                     <button
                       onClick={onTestPush}
                       className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-white text-[11px]"
                     >
-                      Test Push & Haptics
+                      Test Push &amp; Haptics
                     </button>
                   </div>
                 </div>
+
+                {/* Detailed Siren Acoustic Controls */}
+                {settings.enableSiren && (
+                  <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800 space-y-3.5 mt-3">
+                    <div className="flex items-center justify-between">
+                      <div className="font-semibold text-white text-xs flex items-center gap-1.5">
+                        <Volume2 className="w-4 h-4 text-rose-400" />
+                        <span>Emergency Siren Acoustics &amp; Volume</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleTestSiren(settings.sirenProfile || 'WAIL')}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                          isTestingSiren
+                            ? 'bg-rose-600 text-white animate-pulse'
+                            : 'bg-slate-800 hover:bg-slate-700 text-rose-300 border border-rose-900/40'
+                        }`}
+                      >
+                        {isTestingSiren ? (
+                          <>
+                            <VolumeX className="w-3.5 h-3.5" />
+                            <span>Stop Siren Preview</span>
+                          </>
+                        ) : (
+                          <>
+                            <Volume2 className="w-3.5 h-3.5" />
+                            <span>Test Loud Siren Now</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Siren Volume Slider */}
+                    <div>
+                      <div className="flex justify-between items-center text-[11px] mb-1">
+                        <span className="text-slate-400">Siren Output Volume</span>
+                        <span className="font-mono text-white font-bold">
+                          {Math.round((settings.sirenVolume ?? 1.0) * 100)}% (Full Blast)
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.2"
+                        max="1.0"
+                        step="0.05"
+                        value={settings.sirenVolume ?? 1.0}
+                        onChange={(e) => setSettings({ ...settings, sirenVolume: parseFloat(e.target.value) })}
+                        className="w-full accent-rose-500"
+                      />
+                      <div className="flex justify-between text-[10px] text-slate-500 font-mono mt-0.5">
+                        <span>20% (Subdued)</span>
+                        <span>70% (Standard)</span>
+                        <span className="text-rose-400 font-bold">100% (Maximum Emergency Alert)</span>
+                      </div>
+                    </div>
+
+                    {/* Siren Sound Profile Choices */}
+                    <div>
+                      <span className="text-[11px] text-slate-400 block mb-1.5">Siren Sound Profile:</span>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSettings({ ...settings, sirenProfile: 'WAIL' })}
+                          className={`p-2.5 rounded-lg text-left border transition-colors ${
+                            (settings.sirenProfile || 'WAIL') === 'WAIL'
+                              ? 'bg-slate-800 border-rose-500 text-white'
+                              : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <div className="font-bold text-[11px] text-white">Emergency Wail</div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">Dual-harmonic 850–1450Hz sweep</div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setSettings({ ...settings, sirenProfile: 'HILO' })}
+                          className={`p-2.5 rounded-lg text-left border transition-colors ${
+                            settings.sirenProfile === 'HILO'
+                              ? 'bg-slate-800 border-rose-500 text-white'
+                              : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <div className="font-bold text-[11px] text-white">Two-Tone Hi-Lo</div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">960Hz / 770Hz ambulance alert</div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setSettings({ ...settings, sirenProfile: 'STROBE' })}
+                          className={`p-2.5 rounded-lg text-left border transition-colors ${
+                            settings.sirenProfile === 'STROBE'
+                              ? 'bg-slate-800 border-rose-500 text-white'
+                              : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <div className="font-bold text-[11px] text-white">Strobe Pulse</div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">Rapid 4.5Hz multi-harmonic bursts</div>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

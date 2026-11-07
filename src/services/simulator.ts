@@ -140,7 +140,16 @@ class SignalSimulator {
       y: Math.round(y * 1000) / 1000,
       z: Math.round(z * 1000) / 1000,
       magnitude: Math.round(magnitude * 1000) / 1000,
+      sensorType: 'ACC',
       hr: Math.round(hr),
+      rawX: Math.round(x * 1000),
+      rawY: Math.round(y * 1000),
+      rawZ: Math.round(z * 1000),
+      packetNumber: this.sampleCounter,
+      rawHex: `02 SIM ${this.sampleCounter.toString(16).padStart(4, '0').toUpperCase()}`,
+      samplesInPacket: 1,
+      actionName: `Simulator: ${this.scenario}`,
+      actionSampleIndex: this.sampleCounter,
     };
 
     this.onSampleCallbacks.forEach((cb) => cb(sample));
