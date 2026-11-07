@@ -1,7 +1,13 @@
 # PRD-005: Backend Ingestion & Alert Dispatch API
 
+> [!NOTE]
+> **Status: Planned Future Integration (Phase 2)**
+> The `backend-container` microservice represents Phase 2 cloud infrastructure. Phase 1 focuses exclusively on the self-contained native Android app (`android-app`) connecting to the Polar Loop Gen2. This document specifies the future cloud API contracts, telemetry schemas, and alert ingestion flows for seamless integration when Phase 2 begins.
+
+---
+
 ## 1. Responsibilities
-The `backend-container` is a lightweight, reliable Node.js / TypeScript microservice responsible for:
+When implemented in Phase 2, the `backend-container` will serve as a lightweight, reliable Node.js / TypeScript microservice responsible for:
 1. Receiving continuous telemetry and heartbeat streams from `android-app`.
 2. Managing session states (Active Monitoring, Paused, Alarm Triggered, Disconnected).
 3. Routing multi-channel notifications (SMS via Twilio, FCM push notifications, Webhooks).

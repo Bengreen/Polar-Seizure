@@ -1,45 +1,106 @@
-# PRD-004: Dead Man's Watchdog & Emergency Alert System
+# PRD-004: Dead Man's Handle & Emergency Alert System
 
-## 1. Safety Rationale
-In life-critical medical telemetry, a silent failure is as dangerous as an unhandled seizure. Potential failure modes:
-1. Polar wearable battery depleted or device taken off wrist.
-2. Bluetooth radio disabled or radio link disconnected.
-3. Android phone runs out of battery, enters hard freeze, or drops network connectivity.
-4. Patient loses consciousness without convulsive movement (atonic seizure).
-
-The **Dead Man's Watchdog** provides dual-tier local and cloud-based fail-safe monitoring.
+> [!IMPORTANT]
+> **Status: Architectural Specification / Deferred Implementation**
+> As explicitly instructed, the **Dead Man's Handle** described in this document is **NOT to be implemented in active code yet**. This PRD formalizes the requirements, timeout thresholds, state transitions, and fail-safe protocols so that it can be enabled cleanly in a dedicated future update.
+>
+> In addition, cloud-side alerting and remote escalation are designated as **Phase 2 Future Integrations**; initial development remains strictly focused on on-device processing and local alarm safety.
 
 ---
 
-## 2. Watchdog Architecture
+## 1. Safety Rationale & Fail-Closed Philosophy
+In life-critical medical telemetry, a silent system failure carries the same risk profile as an undetected seizure:
+1. **Sensor Battery Depletion:** The Polar Loop Gen2 battery discharges during nocturnal monitoring.
+2. **BLE Disconnection / Radio Drop:** The Bluetooth link between the Polar Loop Gen2 and the Android phone is severed due to RF interference, distance, or wearable reboot.
+3. **Sensor Detachment:** The wristband slips off the patient's wrist or is inadvertently removed.
+4. **Phone Failure:** The Android phone runs out of battery, freezes, or kills background execution.
+5. **Atonic / Non-Convulsive Seizures:** The patient loses consciousness or collapses without the rhythmic motor shaking required to trigger the 3–8 Hz FFT detector.
 
-### 2.1 Local Watchdog (`android-app`)
-* **Sensor Heartbeat:** Every valid sample frame resets a local hardware-backed countdown timer (default: 30 seconds).
-* **Sensor Disconnect Action:**
-  * If no BLE packets arrive within 15 seconds: Notification status turns Yellow ("Sensor Lost").
-  * If no packets arrive within 30 seconds: Audible tone prompts user to check wearable.
-
-### 2.2 Cloud Dead Man's Watchdog (`backend-container`)
-* **Check-In Ping:** The `android-app` transmits a periodic ping `/api/v1/watchdog/heartbeat` every 20 seconds.
-* **Backend Timeout:** If no heartbeat is received within 60 seconds (configurable per patient profile):
-  * The cloud watchdog status triggers **ESCALATION_DEADMAN**.
-  * Carers are alerted via SMS: *"Polar-Seizure Alert: Telemetry lost for [Patient Name] for >60s. Check phone and sensor immediately."*
+To address these vulnerabilities, Polar-Seizure specifies a **Dead Man's Handle** that adheres to a **fail-closed** paradigm: if valid sensor telemetry ceases unexpectedly, the system assumes the user is at risk and initiates an escalation workflow.
 
 ---
 
-## 3. Emergency Alert Escalation Matrix
+## 2. Dead Man's Handle Architecture
 
 ```
-[Alarm Triggered]
+                          ┌────────────────────────┐
+                          │ Active Monitoring Loop │
+                          └───────────┬────────────┘
+                                      │
+                                      ▼
+                      [Valid 25 Hz ACC Batch Arrives?]
+                                     / \
+                               YES  /   \  NO
+                                   /     \
+                                  v       v
+         ┌───────────────────────────┐   ┌─────────────────────────────┐
+         │ Reset In-Flight Countdown │   │ In-Flight Timer Accumulates │
+         │ Timer = 0s                │   └──────────────┬──────────────┘
+         └───────────────────────────┘                  │
+                                                        │ Elapsed >= 15 seconds
+                                                        ▼
+                                         ┌─────────────────────────────┐
+                                         │ Stage 1: Warning Lost Feed  │
+                                         │ - Low-priority local chime  │
+                                         │ - Amber persistent banner   │
+                                         └──────────────┬──────────────┘
+                                                        │
+                                                        │ Elapsed >= 30 seconds
+                                                        ▼
+                                         ┌─────────────────────────────┐
+                                         │ Stage 2: Dead Man's Alarm   │
+                                         │ - Loud audible siren        │
+                                         │ - Full-screen prompt        │
+                                         │ - [Phase 2] Cloud Alert     │
+                                         └─────────────────────────────┘
+```
+
+---
+
+## 3. Detailed Specifications
+
+### 3.1 Local In-Flight Sensor Dead Man's Timer (`android-app`)
+* **Watchdog Mechanism:** A hardware-backed high-resolution timer resets every time a valid `PolarAccData` frame arrives from the official Polar BLE SDK.
+* **Escalation Thresholds:**
+  * **$T_1 = 15\text{ seconds}$ (Warning State):**
+    * Notification changes to amber: *"Polar Loop Gen2 Telemetry Lost — Checking connection..."*
+    * Emits a subtle local warning chime on the phone to alert the wearer to check wristband placement.
+  * **$T_2 = 30\text{ seconds}$ (Critical Dead Man's Trigger):**
+    * The service transitions to `CRITICAL_DEADMAN_TRIGGER`.
+    * Emits an audible alarm siren via `AudioAttributes.USAGE_ALARM` (bypassing silent/DND profiles).
+    * Presents an on-screen dialog: *"Warning: Sensor Disconnected. Tap to reconnect or pause monitoring."*
+
+### 3.2 Graceful "Pause Monitoring" Mode
+To avoid nuisance alarms when the wearer charges the Polar Loop Gen2 or takes a bath:
+* The user can select **"Pause Monitoring"** in the Android app.
+* Monitoring is paused for a configurable duration (15m, 30m, 60m, or until manually resumed).
+* During Pause mode, the Dead Man's Handle is temporarily disarmed and the notification displays *"Monitoring Paused (Charging/Resting)"*.
+* When the pause timer expires, the app prompts the user to put the band back on and resume.
+
+### 3.3 Cloud Dead Man's Watchdog (`backend-container`) [Phase 2 Future Integration]
+* **Heartbeat Ping:** In Phase 2, the `android-app` will send periodic status pings (`POST /api/v1/watchdog/heartbeat`) every 20 seconds over HTTPS/WSS.
+* **Cloud Timeout:** If the cloud backend receives no heartbeat for **60 seconds**:
+  * Cloud watchdog status transitions to `ESCALATION_DEADMAN`.
+  * Multi-tier carer escalation triggers immediately:
+    * Primary Carer SMS: *"Polar-Seizure Alert: Telemetry connection lost for [Patient Name] for >60s. Check phone and sensor immediately."*
+    * Push notification dispatched to Carer Web Portal and mobile apps.
+
+---
+
+## 4. Emergency Alert Escalation Flow (Phased)
+
+```
+[Seizure Alarm OR Dead Man's Critical Trigger]
        │
-       ├─► Step 1: Local Device Alert
+       ├─► Phase 1 (Local Device Alert - Active Core):
        │     └─ Max volume acoustic siren + vibration (Override DND)
        │     └─ 15-second countdown with prominent "I Am OK" abort button
        │
-       ├─► Step 2: Carer Tier 1 (Immediate)
-       │     └─ Push notification to Carer Mobile App / Web Portal
-       │     └─ SMS with patient GPS coordinates + timestamp
-       │
-       └─► Step 3: Carer Tier 2 (Escalation +30s if unacknowledged)
-             └─ Automated voice call / backup carer SMS
+       └─► Phase 2 (Remote Carer Escalation - Future Integration):
+             ├─► Tier 1 (Immediate +15s unacknowledged):
+             │     └─ Push notification to Carer Web Portal
+             │     └─ Twilio SMS with patient GPS coordinates + timestamp
+             │
+             └─► Tier 2 (Escalation +45s unacknowledged):
+                   └─ Automated voice call / backup carer SMS
 ```

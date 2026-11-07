@@ -1,7 +1,13 @@
 # PRD-006: Carer & Clinician Web Portal
 
+> [!NOTE]
+> **Status: Planned Future Integration (Phase 2)**
+> The `frontend-container` web portal represents Phase 2 cloud monitoring infrastructure. Phase 1 focuses on on-device monitoring and local alerting on the Android smartphone. This document specifies the future carer web dashboard, real-time spectral visualizers, and clinician review workflows.
+
+---
+
 ## 1. Overview
-The `frontend-container` provides a modern, responsive web portal for family carers, residential care staff, and medical professionals to monitor patient safety, visualize motion frequencies, and manage emergency settings.
+When activated in Phase 2, the `frontend-container` provides a modern, responsive web portal for family carers, residential care staff, and medical professionals to monitor patient safety, visualize motion frequencies in real time, and manage emergency settings.
 
 ---
 

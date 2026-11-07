@@ -32,9 +32,36 @@
  - Setting 0x02: Range 8G (0x08, 0x00)
 ```
 
+### 2.3 Official Polar BLE SDK Integration
+While the low-level GATT handles PMD frames, the Android application integrates via the **official Polar BLE SDK** (`com.github.polarofficial:polar-ble-sdk`):
+```kotlin
+val api: PolarBleApi = PolarBleApiDefaultImpl.defaultImplementation(
+    applicationContext,
+    setOf(
+        PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_ONLINE_STREAMING,
+        PolarBleApi.PolarBleSdkFeature.FEATURE_BATTERY_INFO,
+        PolarBleApi.PolarBleSdkFeature.FEATURE_DEVICE_INFO
+    )
+)
+
+// In streamingFeaturesReady callback:
+val settings = mapOf(
+    PolarSensorSetting.SettingType.SAMPLE_RATE to 25, // 25 Hz for battery conservation
+    PolarSensorSetting.SettingType.RESOLUTION to 16,  // 16 bit
+    PolarSensorSetting.SettingType.RANGE to 8         // ±8g
+)
+api.startAccStreaming(deviceId, PolarSensorSetting(settings))
+    .observeOn(Schedulers.computation())
+    .subscribe({ polarAccData ->
+        // Deliver samples to DSP engine
+    }, { error ->
+        // Handle stream error
+    })
+```
+
 ---
 
-## 3. Ingestion Payload Schema (`android-app` to `backend-container`)
+## 3. Ingestion Payload Schema (`android-app` to `backend-container` [Phase 2])
 Transported over HTTPS POST or WebSocket to `/api/v1/telemetry/frame`:
 
 ```json
