@@ -37,7 +37,7 @@ class SeizureFftEngineTest {
         for (i in 0 until 512) {
             val t = i / sampleRate
             val acc = 0.5 * sin(2.0 * PI * freq * t)
-            val res = engine.addSample(acc, 0.0, 1.0)
+            val res = engine.addSample(0.0, 0.0, 1.0 + acc)
             if (res != null) lastResult = res
         }
 
@@ -58,7 +58,7 @@ class SeizureFftEngineTest {
         for (i in 0 until 512) {
             val t = i / sampleRate
             val acc = 1.5 * sin(2.0 * PI * freq * t)
-            val res = engine.addSample(acc, 0.0, 1.0)
+            val res = engine.addSample(0.0, 0.0, 1.0 + acc)
             if (res != null) {
                 lastResult = res
             }
