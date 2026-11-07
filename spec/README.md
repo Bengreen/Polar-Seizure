@@ -23,6 +23,8 @@ spec/
 ---
 
 ## Architecture Principles
-1. **Zero-Drop Telemetry:** BLE streams must maintain connection persistence across sleep, Doze, and background states via Android Foreground Service.
-2. **Fail-Safe Watchdog:** Missing heartbeats trigger escalating carer alerts within 60 seconds.
-3. **Immutability & GitOps:** Every container and Android artifact is tagged with its Git SHA and deployed via FluxCD.
+1. **OpenSeizureDetector Algorithmic Mirroring:** 25 Hz sampling, 5.0-second windowing, 3–8 Hz FFT bandpass energy integration, and dual-metric thresholding (`AlarmThresh` + `AlarmRatioThresh` $> 50\%$).
+2. **Aggressive Battery Preservation:** 24+ hour battery life on Polar Loop Gen2 via 25 Hz streaming and batched BLE notifications; phone CPU preserved via resting/stillness gating.
+3. **Official Polar BLE SDK Integration:** Seamless lifecycle management, device pairing, and PMD accelerometer streaming via `PolarBleApi`.
+4. **Fail-Closed Dead Man's Handle:** If sensor data is interrupted during active monitoring, local alerts trigger within 15–30 seconds (*Specified / Deferred Implementation*).
+5. **Phased Delivery:** Phase 1 focuses on self-contained native Android detection and local alerts; Phase 2 introduces cloud backend ingestion, cloud deadman monitoring, and web portal access.

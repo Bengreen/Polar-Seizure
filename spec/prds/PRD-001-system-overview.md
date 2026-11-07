@@ -3,64 +3,83 @@
 ## 1. Executive Summary
 **Polar-Seizure (`ps`)** is an open-source, continuous physiological and motion monitoring platform engineered to detect generalized tonic-clonic seizures and related motor seizure events in real time.
 
-Initially prototyped as a Progressive Web App (PWA) via Google AI Studio, the architecture proved suboptimal due to mobile browser sandbox constraints:
-1. Browser execution suspended when backgrounded or locked.
-2. Inability to maintain uninterrupted Bluetooth Low Energy (BLE) GATT connections.
-3. Lack of guaranteed wake-lock mechanisms during critical nocturnal monitoring windows.
+The system mirrors the proven, clinically validated algorithmic principles of the **OpenSeizureDetector** organization (25 Hz sampling, 5-second windowing, 3–8 Hz Fast Fourier Transform spectral power and ratio analysis) while optimizing battery longevity on both the wearable wristband and the host Android smartphone.
 
-The production architecture transitions the core collection and detection engine into a **Native Android Application (`android-app`)** with a non-killable Foreground Service, paired with a cloud-native **`backend-container`** and a responsive **`frontend-container`** web portal adapted from the robust microservice patterns of `sward-warden`.
+### 1.1 Architectural Evolution & Phased Rollout
+1. **Phase 1 (Current Focus — Core Wearable & Local Detection):**
+   - Direct integration with the **Polar Loop Gen2** wristband using the **official Polar BLE SDK** (`com.github.polarofficial:polar-ble-sdk`).
+   - Native Android daemon (`android-app`) executing within an uninterrupted Foreground Service holding a partial wake lock.
+   - On-device real-time 3–8 Hz FFT spectral analysis and dual-threshold classification state machine mirrored from OpenSeizureDetector.
+   - Battery optimization engine balancing 24+ hour wristband runtime with near-real-time alarm responsiveness.
+   - Specification of the local **Dead Man's Handle** for in-flight sensor telemetry loss (*Deferred Implementation — not yet enabled in code*).
+2. **Phase 2 (Future Integrations — Cloud Telemetry & Carer Escalation):**
+   - Cloud telemetry ingestion and session management via `backend-container`.
+   - Multi-tier emergency escalation matrix (Twilio SMS, Firebase Cloud Messaging push, automated voice calls).
+   - Cloud-side Dead Man's Watchdog monitoring Android phone connectivity.
+   - Clinician and carer real-time web portal via `frontend-container`.
 
 ---
 
 ## 2. High-Level Architecture
 
 ```
-+-------------------------------------------------------------------+
-| Wearable Sensor (Polar Loop Gen2 / Polar Verity / H10)            |
-| - 25 Hz / 50 Hz 3-axis Accelerometer & Heart Rate GATT Stream     |
-+---------------------------------+---------------------------------+
-                                  | Bluetooth Low Energy (BLE 4.2+)
-                                  v
-+-------------------------------------------------------------------+
-| android-app (Persistent Android Client)                           |
-| - Foreground Service with WAKELOCK & persistent notification       |
-| - Real-time 3-8 Hz FFT Spectral Seizure Analysis                  |
-| - Local Fail-safe Dead Man's Watchdog                             |
-| - High-decibel audible alarm tone synthesis                       |
-| - Offline rolling buffer (SQLite / Room)                          |
-+---------------------------------+---------------------------------+
-                                  | HTTPS / WebSocket (JSON Stream)
-                                  v
-+-------------------------------------------------------------------+
-| backend-container (Node.js / TypeScript Microservice)             |
-| - Ingests telemetry, battery metrics, and heartbeats              |
-| - Carer escalation engine (Twilio SMS / FCM Push / Webhooks)      |
-| - Cloud Dead Man's Watchdog (triggers if Android phone dies)      |
-| - Time-series persistence (PostgreSQL / SQLite)                   |
-+---------------------------------+---------------------------------+
-                                  | REST API / Server-Sent Events
-                                  v
-+-------------------------------------------------------------------+
-| frontend-container (React / Vite / Tailwind Web Portal)           |
-| - Live carer monitoring & alert status                            |
-| - FFT Spectrum Visualizer & Acceleration Vector Graph             |
-| - Emergency contact configuration & escalation rules              |
-| - Historical incident review & telemetry replay                   |
-+-------------------------------------------------------------------+
++───────────────────────────────────────────────────────────────────+
+│ Wearable Sensor: Polar Loop Gen2 (Official Polar BLE SDK)         │
+│ - Continuous 3-axis Accelerometer sampled at 25 Hz                │
+│ - Batched BLE GATT notifications (Polar Measurement Data - PMD)   │
+│ - Battery-optimized radio duty cycle (target: >= 24h continuous)  │
++─────────────────────────────────┬─────────────────────────────────+
+                                  │ Bluetooth Low Energy (BLE 4.2+)
+                                  ▼
++───────────────────────────────────────────────────────────────────+
+│ android-app (Persistent Android Native Client)                    │
+│ - Foreground Service (connectedDevice|dataSync) + PARTIAL_WAKELOCK │
+│ - Official Polar BLE SDK Client (PolarBleApi)                     │
+│ - OpenSeizureDetector Mirrored DSP Engine:                        │
+│     * 25 Hz 3-axis vector magnitude: |a| = sqrt(x^2+y^2+z^2) - 1g │
+│     * 5.0s windowing (125 samples, Hann window, 0.2 Hz resolution) │
+│     * 3-8 Hz ROI Power & Spectral Ratio calculation               │
+│     * Stillness/Resting Gate (bypasses FFT during quiet sleep)    │
+│ - Sensor Dead Man's Handle [SPECIFIED / DEFERRED IMPLEMENTATION]: │
+│     * Local countdown timer monitoring telemetry arrival          │
+│     * Triggers warning at 15s, critical deadman alarm at 30s      │
+│ - High-decibel local audible siren (USAGE_ALARM) + cancel UI      │
+│ - Offline local buffering (Room / SQLite)                         │
++─────────────────────────────────┬─────────────────────────────────+
+                                  │ [PHASE 2 - FUTURE INTEGRATION]
+                                  │ HTTPS / WebSocket (JSON Stream)
+                                  ▼
++───────────────────────────────────────────────────────────────────+
+│ backend-container (Future Cloud Microservice)                     │
+│ - Ingests telemetry frames, heartbeats, and alert dispatches      │
+│ - Multi-tier carer escalation engine (Twilio SMS, FCM Push)       │
+│ - Cloud Dead Man's Watchdog (triggers if Android phone dies)      │
+│ - Time-series persistence & clinician audit database              │
++─────────────────────────────────┬─────────────────────────────────+
+                                  │ [PHASE 2 - FUTURE INTEGRATION]
+                                  │ REST API / Server-Sent Events (SSE)
+                                  ▼
++───────────────────────────────────────────────────────────────────+
+│ frontend-container (Future Carer & Clinician Web Portal)          │
+│ - Live monitoring status, heart rate, and battery telemetry       │
+│ - 3-8 Hz FFT spectral visualizer & acceleration oscilloscope      │
+│ - Incident acknowledgement and emergency contact management       │
++───────────────────────────────────────────────────────────────────+
 ```
 
 ---
 
 ## 3. Core Personas
-1. **Patient / Wearer:** Requires unobtrusive continuous monitoring, low battery drain on the wearable, and reliable local alarm cancellation if a false positive occurs.
-2. **Carers & Family:** Require guaranteed, redundant alerts (SMS, push, phone call) within 10 seconds of a confirmed seizure or lost telemetry connection.
-3. **Clinicians / Medical Reviewers:** Require verifiable acceleration logs, spectral distribution charts, and timestamped seizure logs for pharmacological titration.
-4. **DevOps / SysAdmin:** Requires automated GitOps deployment via FluxCD, automated multi-arch container builds, and reproducible Android APK packaging.
+1. **Patient / Wearer:** Requires lightweight, non-intrusive wrist-worn monitoring (Polar Loop Gen2) with day-and-night battery endurance (>24 hours) and reliable local false-alarm cancellation.
+2. **Carers & Family:** Require guaranteed fail-safe alerts without silent failures; if sensor falls off or battery dies, the Dead Man's Handle triggers prompt notification.
+3. **Clinicians / Medical Reviewers:** Require verifiable frequency domain metrics (3–8 Hz ROI power and spectral ratio) matching clinical seizure detection literature.
+4. **DevOps & Developers:** Require a clean modular separation between local on-device safety (Phase 1) and cloud infrastructure (Phase 2), with automated CI/CD and GitOps.
 
 ---
 
 ## 4. Operational Requirements & Quality Attributes
-* **Availability:** 99.99% monitoring uptime during active session.
-* **Latency:** Seizure alarm escalation initiated in $\le 10$ seconds of continuous 3–8 Hz rhythmic movement matching threshold criteria.
-* **Battery Life:** $\ge 16$ hours continuous BLE streaming on wearable; $\le 5\%$ per hour on host Android device.
-* **Fail-Safe Mechanism:** If BLE disconnects or Android crashes, the Cloud Dead Man's Watchdog escalates an alert within 60 seconds.
+* **Seizure Detection Responsiveness:** Seizure warning raised within 10 seconds (2 consecutive 5-second windows) and alarm raised within 15 seconds of sustained 3–8 Hz rhythmic motion.
+* **Wristband Battery Endurance:** $\ge 24$ hours continuous 25 Hz accelerometer streaming on Polar Loop Gen2 by utilizing BLE notification batching and offloading all FFT computation to the Android smartphone.
+* **Smartphone Battery Consumption:** $\le 3.5\%$ battery drain per hour on Android device during continuous monitoring via stillness-gated FFT processing.
+* **Fail-Safe Integrity (Dead Man's Handle):** System fails closed. If sensor data stops arriving unexpectedly during an active session, local alerting commences within 15–30 seconds.
+* **Phased Independence:** Phase 1 Android detection operates 100% autonomously without requiring internet access or backend availability.
