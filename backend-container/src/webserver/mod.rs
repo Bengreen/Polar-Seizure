@@ -23,7 +23,7 @@ use tower_http::{
     cors::CorsLayer,
     trace::{DefaultOnFailure, DefaultOnRequest, DefaultOnResponse, TraceLayer},
 };
-use tracing::{info, Level};
+use tracing::{Level, info};
 
 use crate::error::AppError;
 use crate::state::AppState;
@@ -43,7 +43,6 @@ pub fn app_router(state: AppState) -> Router {
         // Core diagnostic & info endpoints
         .route("/v0/hello", get(hello_handler))
         .route("/v0/admin/health", get(admin::admin_health))
-        .route("/v0/admin/audit-logs", get(admin::admin_list_audit_logs))
         // User & contact management
         .route("/v0/users", get(users::list_users).post(users::create_user))
         .route(
@@ -53,9 +52,8 @@ pub fn app_router(state: AppState) -> Router {
                 .delete(users::delete_user),
         )
         // Client logging & sync
-        .route("/v0/logs", post(logs::ingest_log))
-        .route("/v0/sync/push", post(sync::push_sync))
-        .route("/v0/sync/pull", get(sync::pull_sync))
+        .route("/v0/logs", post(logs::receive_client_logs))
+        .route("/v0/sync", get(sync::delta_sync))
         // Polar-Seizure telemetry & watchdog endpoints
         .route(
             "/api/v1/telemetry/frame",
@@ -69,14 +67,8 @@ pub fn app_router(state: AppState) -> Router {
             "/api/v1/watchdog/heartbeat",
             post(watchdog::ingest_heartbeat),
         )
-        .route(
-            "/api/v1/alerts/trigger",
-            post(alerts::trigger_alert),
-        )
-        .route(
-            "/api/v1/alerts/active",
-            get(alerts::list_active_alerts),
-        )
+        .route("/api/v1/alerts/trigger", post(alerts::trigger_alert))
+        .route("/api/v1/alerts/active", get(alerts::list_active_alerts))
         .route(
             "/api/v1/alerts/{alert_id}/acknowledge",
             post(alerts::acknowledge_alert),
@@ -84,7 +76,7 @@ pub fn app_router(state: AppState) -> Router {
 
     // Dev auth route
     if state.dev_jwt_keypair.is_some() {
-        router = router.route("/dev/token", post(dev_auth::issue_dev_token));
+        router = router.route("/dev/token", post(dev_auth::generate_token));
     }
 
     let metric_layer = PrometheusMetricLayer::new();
@@ -108,10 +100,15 @@ pub async fn start_app_api(
     cancel_token: CancellationToken,
 ) -> Result<(), AppError> {
     let app = app_router(state.clone());
-    let addr = state.config.server.address;
+    let addr = state.config.webservice.address;
 
     info!("Starting Polar-Seizure backend webserver on {}", addr);
-    let listener = tokio::net::TcpListener::bind(addr).await?;
+    let socket_addr = format!(
+        "{}:{}",
+        addr.host_str().unwrap_or("0.0.0.0"),
+        addr.port().unwrap_or(8080)
+    );
+    let listener = tokio::net::TcpListener::bind(socket_addr).await?;
 
     axum::serve(listener, app)
         .with_graceful_shutdown(async move {
@@ -119,7 +116,7 @@ pub async fn start_app_api(
             info!("Received shutdown signal, terminating server gracefully");
         })
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Message(e.to_string()))?;
 
     Ok(())
 }

@@ -4,7 +4,6 @@
 //! telemetry ingestion, watchdog heartbeat tracking, and HaMS health monitoring.
 
 pub mod config;
-pub mod data;
 pub mod error;
 pub mod hams;
 pub mod metrics;

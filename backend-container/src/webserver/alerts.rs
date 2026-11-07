@@ -1,10 +1,10 @@
 //! Emergency alert dispatch and acknowledgment endpoints for Polar-Seizure.
 
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
 use serde::Deserialize;
 use serde_json::json;
