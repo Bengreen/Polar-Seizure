@@ -1,5 +1,5 @@
 webservice:
-  address: "http://0.0.0.0:8080/sward"
+  address: "http://0.0.0.0:8080/ps"
   forwarding_headers: []
   cors:
     allow_origins: []
@@ -9,10 +9,10 @@ webservice:
   max_connections: 100
 database:
   url:
-    url: postgres://localhost:5432/swarddb
+    url: postgres://localhost:5432/polarseizuredb
   max_connections: 10
 hams:
-  name: sw-be
+  name: ps-backend
   version: "0.1.0"
   start_active: true
   addr: "0.0.0.0:8079"
@@ -29,11 +29,8 @@ debugging:
   fail_debug_delay: 0s
   environment: "development"
   log_level: "info"
-spatial:
-  official_boundary_api_url: null
-  official_boundary_api_key: null
 keycloak:
   base_url: "http://keycloak-keycloakx-http.auth.svc.cluster.local/auth"
-  realm: "sw-dev"
-  client_id: "sward-warden-be"
+  realm: "ps-dev"
+  client_id: "polar-seizure-backend"
   client_secret: null
