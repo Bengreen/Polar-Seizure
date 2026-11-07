@@ -56,6 +56,6 @@ describe('HomeComponent', () => {
   it('should display the user profile section', () => {
     const compiled = fixture.nativeElement as HTMLElement;
     // No obvious PRD requirement
-    expect(compiled.textContent).toContain('Command Center');
+    expect(compiled.textContent).toContain('Polar-Seizure Live Monitor');
   });
 });
