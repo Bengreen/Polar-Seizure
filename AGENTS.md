@@ -83,6 +83,7 @@ Polar-Seizure/
 ---
 
 ## 6. How Agents Should Work in this Codebase
+* **Makefile as Standard Developer & Agent Entry Point:** Always execute builds, tests, linting, and formatting via the top-level `Makefile` targets (e.g. `make test`, `make build`, `make test-be`, `make test-fe`, `make test-android`, `make ps-be-check`, `make pre-commit-run`) rather than invoking subsystem commands directly.
 * **Spec-First Changes:** When adding features or changing protocols, review and update the relevant document in `spec/prds/`.
 * **Do Not Touch `pwa-container/` for New Features:** `pwa-container` is an archived reference container. Active development happens in `android-app`, `backend-container`, and `frontend-container`.
 * **Respect Battery & Memory Constraints:** Any loop or listener in `android-app` must be evaluated for battery impact.

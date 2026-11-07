@@ -20,6 +20,23 @@ BE_INTERNAL_PORT := 8080
 BE_INTERNAL_HEALTH_PORT := 8079
 FE_INTERNAL_PORT := 80
 
+# Auto-detect Android SDK and Java if available
+export ANDROID_HOME ?= $(firstword $(wildcard $(HOME)/Library/Android/sdk /opt/homebrew/share/android-commandlinetools /usr/local/share/android-sdk))
+ifeq ($(strip $(JAVA_HOME)),)
+  JAVA_CANDIDATE := $(firstword $(wildcard \
+    /opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home \
+    /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home \
+    /usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home \
+    /usr/local/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home \
+  ))
+  ifeq ($(strip $(JAVA_CANDIDATE)),)
+    JAVA_CANDIDATE := $(shell /usr/libexec/java_home -v 21 2>/dev/null || /usr/libexec/java_home -v 17 2>/dev/null)
+  endif
+  ifneq ($(strip $(JAVA_CANDIDATE)),)
+    export JAVA_HOME := $(JAVA_CANDIDATE)
+  endif
+endif
+
 # Default target
 all: build test
 
