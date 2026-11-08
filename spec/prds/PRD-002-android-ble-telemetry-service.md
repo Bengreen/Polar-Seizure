@@ -76,6 +76,48 @@ If the Polar Loop Gen2 battery depletes, the Bluetooth radio drops, or the band 
 
 ---
 
-## 4. Offline Telemetry Cache
+## 4. Native On-Device Emergency SMS & GPS Dispatch [Phase 1 Standalone]
+
+### 4.1 Rationale & Autonomy
+To protect patient safety in Phase 1 without requiring an active cloud backend or Wi-Fi connectivity, the Android app provides direct, autonomous caregiver alerting via cellular SMS and GPS:
+1. Operates over standard cellular carrier networks (2G/3G/4G/5G SMS) without internet dependence.
+2. Dispatches alerts directly to configured caregiver phone numbers using the Android telephony stack.
+3. Automatically embeds real-time geographical coordinates via a universal Google Maps navigation link.
+
+### 4.2 Telephony Integration (`android.telephony.SmsManager`)
+* **API Access:**
+  * Uses `context.getSystemService(SmsManager::class.java)` (API 31+ / Android 12 through Android 15).
+  * Multi-SIM awareness: Supports `smsManager.createForSubscriptionId(subId)` to select the user's primary active cellular subscription.
+* **Message Handling:**
+  * Uses `smsManager.divideMessage(text)` and `smsManager.sendMultipartTextMessage(...)` to handle messages exceeding standard 160-character GSM limits without truncation.
+  * Registers a `BroadcastReceiver` listening to `PendingIntent` callbacks (`SMS_SENT_ACTION` and `SMS_DELIVERED_ACTION`) to confirm carrier transmission and log delivery status.
+
+### 4.3 Location Acquisition (`FusedLocationProviderClient`)
+* **Location Service:**
+  * Integrates Google Play Services `FusedLocationProviderClient` (with fallback to `LocationManager.GPS_PROVIDER` for non-GMS environments).
+  * Foreground Service declaration updated to: `android:foregroundServiceType="connectedDevice|dataSync|location"`.
+* **Two-Stage Dispatch Protocol (Mirrored from OpenSeizureDetector):**
+  * **Stage 1 — Instant Seizure Alert ($T = 0\text{s}$ post-countdown):**
+    * Dispatched immediately upon alarm confirmation (does not block waiting for a cold GPS fix).
+    * If cached location is recent ($< 5\text{ minutes}$ old), it is included; otherwise notes GPS acquisition in progress:
+      > *"EMERGENCY: Polar-Seizure detected possible tonic-clonic seizure for [Patient Name] at [Time]. Acquiring fresh GPS fix..."*
+  * **Stage 2 — High-Accuracy Location Update ($T \approx +10\text{s}$ to $30\text{s}$):**
+    * `fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cancellationToken)` requests a high-precision fix with a 15-second timeout.
+    * Once locked, dispatches the follow-up location SMS:
+      > *"LOCATION UPDATE: [Patient Name] is located at: https://maps.google.com/?q={lat},{lng} (Accuracy: ±{acc}m)."*
+
+### 4.4 Permissions & Google Play Safety Exemption
+* **Required Manifest Permissions:**
+  * `android.permission.SEND_SMS` (Direct SMS transmission)
+  * `android.permission.READ_PHONE_STATE` (SIM state / carrier availability)
+  * `android.permission.ACCESS_FINE_LOCATION` (GPS satellite precision)
+  * `android.permission.ACCESS_COARSE_LOCATION` (Network/Wi-Fi trilateration)
+* **Google Play Policy Exemption:**
+  * Qualifies under Google Play's restricted permissions policy exemption: **"Physical safety / emergency alert apps (e.g., apps that send SMS alerts in emergencies)"**.
+  * Declared in the Google Play Console Declaration Form with an automated emergency safety justification.
+
+---
+
+## 5. Offline Telemetry Cache
 * In the event of cellular or Wi-Fi disconnection, all telemetry frames, FFT power metrics, and warning states are buffered locally in an on-device SQLite / Room database.
 * When future Phase 2 backend integration is activated, buffered frames synchronize with `backend-container` with original device timestamps preserved.

@@ -6,10 +6,11 @@
 The system mirrors the proven, clinically validated algorithmic principles of the **OpenSeizureDetector** organization (25 Hz sampling, 5-second windowing, 3–8 Hz Fast Fourier Transform spectral power and ratio analysis) while optimizing battery longevity on both the wearable wristband and the host Android smartphone.
 
 ### 1.1 Architectural Evolution & Phased Rollout
-1. **Phase 1 (Current Focus — Core Wearable & Local Detection):**
+1. **Phase 1 (Current Focus — Core Wearable, Local Detection & Direct SMS/GPS Alerting):**
    - Direct integration with the **Polar Loop Gen2** wristband using the **official Polar BLE SDK** (`com.github.polarofficial:polar-ble-sdk`).
    - Native Android daemon (`android-app`) executing within an uninterrupted Foreground Service holding a partial wake lock.
    - On-device real-time 3–8 Hz FFT spectral analysis and dual-threshold classification state machine mirrored from OpenSeizureDetector.
+   - **Native On-Device Cellular SMS & GPS Dispatch:** Alerts caregivers directly via `SmsManager` with high-accuracy GPS coordinates (`FusedLocationProviderClient`) without requiring internet or server infrastructure.
    - Battery optimization engine balancing 24+ hour wristband runtime with near-real-time alarm responsiveness.
    - Specification of the local **Dead Man's Handle** for in-flight sensor telemetry loss (*Deferred Implementation — not yet enabled in code*).
 2. **Phase 2 (Future Integrations — Cloud Telemetry & Carer Escalation):**
@@ -33,22 +34,32 @@ The system mirrors the proven, clinically validated algorithmic principles of th
                                   ▼
 +───────────────────────────────────────────────────────────────────+
 │ android-app (Persistent Android Native Client)                    │
-│ - Foreground Service (connectedDevice|dataSync) + PARTIAL_WAKELOCK │
+│ - Foreground Service (connectedDevice|dataSync|location) + WAKELOCK│
 │ - Official Polar BLE SDK Client (PolarBleApi)                     │
 │ - OpenSeizureDetector Mirrored DSP Engine:                        │
 │     * 25 Hz 3-axis vector magnitude: |a| = sqrt(x^2+y^2+z^2) - 1g │
 │     * 5.0s windowing (125 samples, Hann window, 0.2 Hz resolution) │
 │     * 3-8 Hz ROI Power & Spectral Ratio calculation               │
 │     * Stillness/Resting Gate (bypasses FFT during quiet sleep)    │
+│ - Direct On-Device SMS & GPS Dispatcher [PHASE 1 ACTIVE]:         │
+│     * Native SmsManager cellular dispatch to caregiver phones     │
+│     * FusedLocationProviderClient GPS lock & Google Maps link     │
+│     * 15-second local countdown with "Cancel / I Am OK" abort UI  │
 │ - Sensor Dead Man's Handle [SPECIFIED / DEFERRED IMPLEMENTATION]: │
 │     * Local countdown timer monitoring telemetry arrival          │
 │     * Triggers warning at 15s, critical deadman alarm at 30s      │
 │ - High-decibel local audible siren (USAGE_ALARM) + cancel UI      │
 │ - Offline local buffering (Room / SQLite)                         │
-+─────────────────────────────────┬─────────────────────────────────+
-                                  │ [PHASE 2 - FUTURE INTEGRATION]
-                                  │ HTTPS / WebSocket (JSON Stream)
-                                  ▼
++─────────────────┬───────────────────────────────┬─────────────────+
+                  │ Cellular SMS (GSM / LTE)      │ [PHASE 2 - FUTURE]
+                  │ Direct to Caregiver Phones    │ HTTPS / WebSocket
+                  ▼                               ▼
++───────────────────────────────────+  +────────────────────────────+
+│ Caregiver Mobile Phones           │  │ backend-container          │
+│ - SMS 1: Seizure Event Alert      │  │ (Future Cloud Microservice)│
+│ - SMS 2: GPS Map Coordinates Link │  │ - Multi-tier escalation    │
++───────────────────────────────────+  +────────────────────────────+
+```
 +───────────────────────────────────────────────────────────────────+
 │ backend-container (Future Cloud Microservice)                     │
 │ - Ingests telemetry frames, heartbeats, and alert dispatches      │
