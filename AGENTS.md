@@ -73,21 +73,26 @@ Polar-Seizure/
 ---
 
 ## 5. Development Workflow & CI/CD Rules
-1. **Pull Request Quality Gates:**
-   - Every PR triggers `.github/workflows/test-pr.yml`.
-   - Must pass linting, type checks (`tsc --noEmit`), and automated unit tests before merge.
-2. **Main Branch Artifact Build & Content-SHA Caching:**
+1. **Branch & PR Workflow Only (Never Commit Directly to `main`):**
+   - No direct commits or pushes to `main` are allowed for humans or AI agents under any circumstances.
+   - All work must be developed on a dedicated feature/fix branch (e.g. `feat/...`, `fix/...`, `docs/...`).
+   - Changes must be merged strictly via GitHub Pull Requests after passing all automated CI quality gates and the GitHub Merge Queue.
+2. **Pull Request Quality Gates:**
+   - Every PR triggers continuous integration workflows across affected paths.
+   - Must pass linting, type checks, unit tests, and pre-commit checks (`make pre-commit-run`) before merge.
+3. **Main Branch Artifact Build & Content-SHA Caching:**
    - Merges to `main` trigger CI/CD workflows (`android-ci.yml`, `backend-docker.yml`, `frontend-docker.yml`).
    - Each workflow resolves the latest commit SHA affecting that component (`git log -1 --format=%H -- <component>/`).
-   - If an artifact with `sha-${CONTENT_SHA}` already exists in GitHub Actions cache, rebuilding is skipped.
-   - If new changes exist, compiles and attaches the APK labeled with `sha-${CONTENT_SHA}` as a GitHub Actions workflow artifact.
-3. **Decoupled Release Promotion:**
+   - If an artifact with `sha-${CONTENT_SHA}` already exists in GitHub Actions cache or GHCR, rebuilding is skipped.
+   - If new changes exist, compiles and attaches the APK labeled with `sha-${CONTENT_SHA}` as a GitHub Actions workflow artifact and pushes containers to GHCR.
+4. **Decoupled Release Promotion:**
    - Releases are independent of merges to `main` and initiated manually via `.github/workflows/release.yml` (workflow_dispatch or GitHub Release publish).
    - Promotes existing verified SHA artifacts without rebuilding: tags GHCR container packages with the release version (e.g. `v1.0.0`) and publishes the Android APK directly to GitHub Releases with SHA256 checksums.
 
 ---
 
 ## 6. How Agents Should Work in this Codebase
+* **Strict Branch Isolation:** Always create a new branch for any change, verify locally with `make pre-commit-run`, push the branch, and open a Pull Request. Never modify or commit to `main` directly.
 * **Makefile as Standard Developer & Agent Entry Point:** Always execute builds, tests, linting, and formatting via the top-level `Makefile` targets (e.g. `make test`, `make build`, `make test-be`, `make test-fe`, `make test-android`, `make ps-be-check`, `make pre-commit-run`) rather than invoking subsystem commands directly.
 * **Spec-First Changes:** When adding features or changing protocols, review and update the relevant document in `spec/prds/`.
 * **Do Not Touch `pwa-container/` for New Features:** `pwa-container` is an archived reference container. Active development happens in `android-app`, `backend-container`, and `frontend-container`.
