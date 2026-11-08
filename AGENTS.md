@@ -41,7 +41,7 @@ Polar-Seizure/
   * Android: `org.openseizuredetector.polar` or `io.polar.seizure`
   * Backend: `@polar-seizure/backend`
   * Frontend: `@polar-seizure/frontend`
-  * Container Images: `ghcr.io/bengreen/polar-seizure-backend`, `ghcr.io/bengreen/polar-seizure-frontend`
+  * Container & Package Images: `ghcr.io/polecatworks/polar-seizure-backend`, `ghcr.io/polecatworks/polar-seizure-frontend`, `ghcr.io/polecatworks/polar-seizure-app`
 
 ---
 
@@ -75,10 +75,14 @@ Polar-Seizure/
 1. **Pull Request Quality Gates:**
    - Every PR triggers `.github/workflows/test-pr.yml`.
    - Must pass linting, type checks (`tsc --noEmit`), and automated unit tests before merge.
-2. **Main Branch Artifact Build:**
-   - Merges to `main` trigger `.github/workflows/build-artifacts.yml`.
-   - Automatically builds multi-arch container images tagged with the commit SHA.
-   - Automatically compiles the Android release APK, packages it with the commit SHA label, and attaches it as a GitHub release / workflow artifact.
+2. **Main Branch Artifact Build & Content-SHA Caching:**
+   - Merges to `main` trigger CI/CD workflows (`android-ci.yml`, `backend-docker.yml`, `frontend-docker.yml`).
+   - Each workflow resolves the latest commit SHA affecting that component (`git log -1 --format=%H -- <component>/`).
+   - If a package or container with `sha-${CONTENT_SHA}` already exists in GHCR, rebuilding is skipped.
+   - If new changes exist, builds and pushes images tagged with `sha-${CONTENT_SHA}` and `latest` to GHCR (`backend`, `frontend`, and `app` OCI package holding the compiled APK).
+3. **Decoupled Release Promotion:**
+   - Releases are independent of merges to `main` and initiated manually via `.github/workflows/release.yml` (workflow_dispatch or GitHub Release publish).
+   - Promotes existing verified SHA packages without rebuilding: tags GHCR packages with the release version (e.g. `v1.0.0`) and publishes the Android APK directly to GitHub Releases with SHA256 checksums.
 
 ---
 

@@ -1,0 +1,190 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. v1.0.0)'
+        required: true
+        type: string
+      target_ref:
+        description: 'Git branch or SHA to release from (defaults to main)'
+        required: false
+        default: 'main'
+        type: string
+      prerelease:
+        description: 'Mark this release as a pre-release'
+        required: false
+        default: false
+        type: boolean
+
+  release:
+    types: [published]
+
+env:
+  REGISTRY: ghcr.io
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  promote-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Determine Target Ref and Tag
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.version }}"
+            REF="${{ github.event.inputs.target_ref }}"
+            PRERELEASE="${{ github.event.inputs.prerelease }}"
+          else
+            TAG="${{ github.event.release.tag_name }}"
+            REF="${{ github.event.release.target_commitish || 'main' }}"
+            PRERELEASE="${{ github.event.release.prerelease }}"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "ref=$REF" >> $GITHUB_OUTPUT
+          echo "prerelease=$PRERELEASE" >> $GITHUB_OUTPUT
+
+      - name: Checkout repository at target ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.meta.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Resolve Component Content SHAs
+        id: shas
+        run: |
+          ANDROID_SHA=$(git log -1 --format=%H -- android-app/ .github/workflows/android-ci.yml)
+          ANDROID_SHORT=$(echo "$ANDROID_SHA" | cut -c1-7)
+          BACKEND_SHA=$(git log -1 --format=%H -- backend-container/ .github/workflows/backend-docker.yml)
+          FRONTEND_SHA=$(git log -1 --format=%H -- frontend-container/ .github/workflows/frontend-docker.yml)
+
+          echo "ANDROID_SHA=$ANDROID_SHA" >> $GITHUB_OUTPUT
+          echo "ANDROID_SHORT=$ANDROID_SHORT" >> $GITHUB_OUTPUT
+          echo "BACKEND_SHA=$BACKEND_SHA" >> $GITHUB_OUTPUT
+          echo "FRONTEND_SHA=$FRONTEND_SHA" >> $GITHUB_OUTPUT
+
+          repo_name="${{ github.repository }}"
+          REPO_LOWER=$(echo "$repo_name" | tr '[:upper:]' '[:lower:]')
+          echo "REPO_LOWER=$REPO_LOWER" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ----------------------------------------------------
+      # Android: Promote existing OCI image or build fallback
+      # ----------------------------------------------------
+      - name: Check & Extract Android APK
+        id: android-asset
+        run: |
+          mkdir -p release-assets
+          TAG="${{ steps.meta.outputs.tag }}"
+          APP_IMAGE="${{ env.REGISTRY }}/${{ steps.shas.outputs.REPO_LOWER }}-app:sha-${{ steps.shas.outputs.ANDROID_SHA }}"
+          APK_DEST="release-assets/polar-seizure-app-${TAG}.apk"
+
+          echo "Checking for pre-built Android package: $APP_IMAGE"
+          if docker manifest inspect $APP_IMAGE >/dev/null 2>&1; then
+            echo "Pre-built Android package found! Extracting APK..."
+            CONTAINER_ID=$(docker create $APP_IMAGE)
+            docker cp ${CONTAINER_ID}:/polar-seizure-app.apk ${APK_DEST}
+            docker rm ${CONTAINER_ID}
+
+            echo "Tagging Android package as $TAG..."
+            docker buildx imagetools create \
+              -t ${{ env.REGISTRY }}/${{ steps.shas.outputs.REPO_LOWER }}-app:${TAG} \
+              $APP_IMAGE
+          else
+            echo "Pre-built image not found. Building APK from source..."
+            echo "fallback_build=true" >> $GITHUB_OUTPUT
+          fi
+          echo "apk_path=${APK_DEST}" >> $GITHUB_OUTPUT
+
+      - name: Set up JDK 17 (Fallback Build only)
+        if: steps.android-asset.outputs.fallback_build == 'true'
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Fallback Build Android APK
+        if: steps.android-asset.outputs.fallback_build == 'true'
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk ../${{ steps.android-asset.outputs.apk_path }}
+        working-directory: android-app
+
+      # ----------------------------------------------------
+      # Backend: Promote existing image or build fallback
+      # ----------------------------------------------------
+      - name: Promote Backend Container Image
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          BE_IMAGE="${{ env.REGISTRY }}/${{ steps.shas.outputs.REPO_LOWER }}-backend:sha-${{ steps.shas.outputs.BACKEND_SHA }}"
+          echo "Promoting Backend: $BE_IMAGE to :$TAG"
+          if docker manifest inspect $BE_IMAGE >/dev/null 2>&1; then
+            docker buildx imagetools create \
+              -t ${{ env.REGISTRY }}/${{ steps.shas.outputs.REPO_LOWER }}-backend:${TAG} \
+              $BE_IMAGE
+          else
+            echo "Warning: $BE_IMAGE not found in GHCR. Building..."
+            docker buildx build \
+              --context ./backend-container \
+              --push \
+              -t ${{ env.REGISTRY }}/${{ steps.shas.outputs.REPO_LOWER }}-backend:${TAG}
+          fi
+
+      # ----------------------------------------------------
+      # Frontend: Promote existing image or build fallback
+      # ----------------------------------------------------
+      - name: Promote Frontend Container Image
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          FE_IMAGE="${{ env.REGISTRY }}/${{ steps.shas.outputs.REPO_LOWER }}-frontend:sha-${{ steps.shas.outputs.FRONTEND_SHA }}"
+          echo "Promoting Frontend: $FE_IMAGE to :$TAG"
+          if docker manifest inspect $FE_IMAGE >/dev/null 2>&1; then
+            docker buildx imagetools create \
+              -t ${{ env.REGISTRY }}/${{ steps.shas.outputs.REPO_LOWER }}-frontend:${TAG} \
+              $FE_IMAGE
+          else
+            echo "Warning: $FE_IMAGE not found in GHCR. Building..."
+            docker buildx build \
+              --context ./frontend-container \
+              --push \
+              -t ${{ env.REGISTRY }}/${{ steps.shas.outputs.REPO_LOWER }}-frontend:${TAG}
+          fi
+
+      # ----------------------------------------------------
+      # Generate Checksums and Publish to GitHub Releases
+      # ----------------------------------------------------
+      - name: Generate SHA256 Checksums
+        run: |
+          cd release-assets
+          sha256sum * > SHA256SUMS.txt
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: Polar-Seizure Release ${{ steps.meta.outputs.tag }}
+          target_commitish: ${{ steps.meta.outputs.ref }}
+          prerelease: ${{ steps.meta.outputs.prerelease == 'true' }}
+          generate_release_notes: true
+          files: |
+            release-assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
