@@ -90,17 +90,32 @@ To avoid nuisance alarms when the wearer charges the Polar Loop Gen2 or takes a 
 ## 4. Emergency Alert Escalation Flow (Phased)
 
 ```
-[Seizure Alarm OR Dead Man's Critical Trigger]
+[Seizure Alarm OR Dead Man's Critical Trigger Confirmed]
        │
-       ├─► Phase 1 (Local Device Alert - Active Core):
-       │     └─ Max volume acoustic siren + vibration (Override DND)
-       │     └─ 15-second countdown with prominent "I Am OK" abort button
+       ├─► Local Device Immediate Alert (Time = 0s):
+       │     └─ Max volume acoustic siren + haptic vibration (Override DND via USAGE_ALARM)
+       │     └─ 15-second visual countdown with prominent "Cancel / I Am OK" button
        │
-       └─► Phase 2 (Remote Carer Escalation - Future Integration):
+       ├─► Phase 1: Direct On-Device Cellular SMS & GPS Dispatch (Time = +15s if uncancelled):
+       │     ├─ Step 1: Immediate SMS sent via SmsManager to all registered caregiver numbers:
+       │     │    "EMERGENCY: Polar-Seizure detected possible seizure for [Name] at [Time]."
+       │     └─ Step 2: High-accuracy GPS lock acquired via FusedLocationProviderClient:
+       │          Follow-up SMS sent with Google Maps URL:
+       │          "LOCATION: [Name] at https://maps.google.com/?q={lat},{lng} (±{acc}m)"
+       │
+       └─► Phase 2: Remote Cloud Carer Escalation (Future Backend Integration):
              ├─► Tier 1 (Immediate +15s unacknowledged):
-             │     └─ Push notification to Carer Web Portal
-             │     └─ Twilio SMS with patient GPS coordinates + timestamp
+             │     └─ Push notification to Carer Web Portal via SSE / WebSocket
+             │     └─ Redundant Twilio cloud SMS gateway (for Wi-Fi-only tablets)
              │
              └─► Tier 2 (Escalation +45s unacknowledged):
-                   └─ Automated voice call / backup carer SMS
+                   └─ Automated voice phone call with text-to-speech / backup carer SMS
 ```
+
+---
+
+## 5. False Alarm Suppression & SMS Rate Limiting
+To avoid alarming caregivers unnecessarily and prevent cellular carrier rate-limiting:
+* **Mandatory 15-Second Local Abort Window:** Outgoing SMS messages are held in a pending state during the initial 15-second siren countdown. If the wearer touches `"Cancel / I Am OK"`, all outbound SMS messages are cancelled immediately.
+* **GPS Cooldown & Rate Limiting:** A hardware cooldown timer (default: 5 minutes) prevents repetitive SMS storming if repeated transient warnings occur in close succession.
+* **Delivery Logging:** Each SMS transmission outcome (`RESULT_OK`, `RESULT_ERROR_GENERIC_FAILURE`, `RESULT_ERROR_NO_SERVICE`) is logged to local Room database for clinical audit.
