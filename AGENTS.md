@@ -41,7 +41,8 @@ Polar-Seizure/
   * Android: `org.openseizuredetector.polar` or `io.polar.seizure`
   * Backend: `@polar-seizure/backend`
   * Frontend: `@polar-seizure/frontend`
-  * Container & Package Images: `ghcr.io/polecatworks/polar-seizure-backend`, `ghcr.io/polecatworks/polar-seizure-frontend`, `ghcr.io/polecatworks/polar-seizure-app`
+  * Container Images: `ghcr.io/polecatworks/polar-seizure-backend`, `ghcr.io/polecatworks/polar-seizure-frontend`
+  * Android Artifacts: `polar-seizure-apk-sha-<SHA>` (GitHub Actions Artifact & GitHub Releases)
 
 ---
 
@@ -78,11 +79,11 @@ Polar-Seizure/
 2. **Main Branch Artifact Build & Content-SHA Caching:**
    - Merges to `main` trigger CI/CD workflows (`android-ci.yml`, `backend-docker.yml`, `frontend-docker.yml`).
    - Each workflow resolves the latest commit SHA affecting that component (`git log -1 --format=%H -- <component>/`).
-   - If a package or container with `sha-${CONTENT_SHA}` already exists in GHCR, rebuilding is skipped.
-   - If new changes exist, builds and pushes images tagged with `sha-${CONTENT_SHA}` and `latest` to GHCR (`backend`, `frontend`, and `app` OCI package holding the compiled APK).
+   - If an artifact with `sha-${CONTENT_SHA}` already exists in GitHub Actions cache, rebuilding is skipped.
+   - If new changes exist, compiles and attaches the APK labeled with `sha-${CONTENT_SHA}` as a GitHub Actions workflow artifact.
 3. **Decoupled Release Promotion:**
    - Releases are independent of merges to `main` and initiated manually via `.github/workflows/release.yml` (workflow_dispatch or GitHub Release publish).
-   - Promotes existing verified SHA packages without rebuilding: tags GHCR packages with the release version (e.g. `v1.0.0`) and publishes the Android APK directly to GitHub Releases with SHA256 checksums.
+   - Promotes existing verified SHA artifacts without rebuilding: tags GHCR container packages with the release version (e.g. `v1.0.0`) and publishes the Android APK directly to GitHub Releases with SHA256 checksums.
 
 ---
 
