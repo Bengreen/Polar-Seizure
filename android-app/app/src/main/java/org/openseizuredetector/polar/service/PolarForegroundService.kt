@@ -19,7 +19,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import org.openseizuredetector.polar.MainActivity
 import org.openseizuredetector.polar.R
-import org.openseizuredetector.polar.dsp.SeizureFftEngine
+import org.openseizuredetector.polar.ble.DiagnosticManager
+import org.openseizuredetector.polar.ble.LogLevel
+import org.openseizuredetector.polar.ble.PolarBleClient
+import org.openseizuredetector.polar.model.SeizureAlarmState
 import org.openseizuredetector.polar.watchdog.DeadmanWatchdog
 
 class PolarForegroundService : Service() {
@@ -27,7 +30,7 @@ class PolarForegroundService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var wakeLock: PowerManager.WakeLock? = null
 
-    private val fftEngine = SeizureFftEngine()
+    private var polarBleClient: PolarBleClient? = null
     private lateinit var watchdog: DeadmanWatchdog
 
     companion object {
@@ -36,6 +39,9 @@ class PolarForegroundService : Service() {
         const val ACTION_START = "ACTION_START_MONITORING"
         const val ACTION_STOP = "ACTION_STOP_MONITORING"
         const val ACTION_CANCEL_ALARM = "ACTION_CANCEL_ALARM"
+        const val ACTION_CONNECT_DEVICE = "ACTION_CONNECT_DEVICE"
+        const val ACTION_DISCONNECT_DEVICE = "ACTION_DISCONNECT_DEVICE"
+        const val EXTRA_DEVICE_ID = "EXTRA_DEVICE_ID"
     }
 
     override fun onCreate() {
@@ -53,16 +59,42 @@ class PolarForegroundService : Service() {
         watchdog = DeadmanWatchdog { state ->
             updateNotification("Status: $state")
         }
+
+        polarBleClient = PolarBleClient(this) { alarmState ->
+            watchdog.feed()
+            when (alarmState) {
+                SeizureAlarmState.WARNING -> updateNotification("⚠️ WARNING: Rhythmic seizure motion detected")
+                SeizureAlarmState.ALARM -> updateNotification("🚨 ALARM: Prolonged seizure activity confirmed!")
+                SeizureAlarmState.DISCONNECTED -> updateNotification("Sensor disconnected")
+                SeizureAlarmState.NORMAL -> updateNotification("Monitoring active — Normal")
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
+                DiagnosticManager.log(LogLevel.INFO, "Foreground service received STOP action.")
                 stopMonitoring()
                 stopSelf()
             }
             ACTION_CANCEL_ALARM -> {
+                DiagnosticManager.log(LogLevel.INFO, "Alarm cancelled by user from notification.")
                 updateNotification("Alarm cancelled by wearer")
+            }
+            ACTION_CONNECT_DEVICE -> {
+                val deviceId = intent.getStringExtra(EXTRA_DEVICE_ID)
+                if (deviceId != null) {
+                    DiagnosticManager.log(LogLevel.INFO, "Service connecting to specified device: $deviceId")
+                    polarBleClient?.connect(deviceId)
+                }
+            }
+            ACTION_DISCONNECT_DEVICE -> {
+                val deviceId = intent.getStringExtra(EXTRA_DEVICE_ID)
+                if (deviceId != null) {
+                    DiagnosticManager.log(LogLevel.INFO, "Service disconnecting device: $deviceId")
+                    polarBleClient?.disconnect(deviceId)
+                }
             }
             else -> {
                 startMonitoring()
@@ -74,7 +106,8 @@ class PolarForegroundService : Service() {
     private fun startMonitoring() {
         try {
             wakeLock?.acquire(24 * 60 * 60 * 1000L) // 24 hours max
-            val notification = buildNotification("Monitoring active — Polar BLE connected")
+            DiagnosticManager.log(LogLevel.INFO, "Partial WakeLock acquired.")
+            val notification = buildNotification("Monitoring active — Scanning for Polar devices")
 
             val fgsType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
@@ -90,14 +123,21 @@ class PolarForegroundService : Service() {
                 notification,
                 fgsType
             )
+
+            // Start scanning for nearby Polar wearables automatically on service startup
+            polarBleClient?.startScan()
         } catch (e: Exception) {
-            e.printStackTrace()
+            DiagnosticManager.log(LogLevel.ERROR, "Error starting foreground service: ${e.localizedMessage}")
         }
     }
 
     private fun stopMonitoring() {
+        polarBleClient?.shutDown()
+        polarBleClient = null
+
         if (wakeLock?.isHeld == true) {
             wakeLock?.release()
+            DiagnosticManager.log(LogLevel.INFO, "Partial WakeLock released.")
         }
         serviceScope.cancel()
     }

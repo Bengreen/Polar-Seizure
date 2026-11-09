@@ -23,6 +23,14 @@ class SeizureFftEngine(
     val warningWindowLimit = 2 // ~5 seconds at 50% overlap of 128 samples
     val alarmWindowLimit = 4   // ~10 seconds
 
+    private var lastBandPower: Double = 0.0
+    private var lastTotalPower: Double = 0.0
+    private var lastAnalysisResult: SeizureAnalysisResult? = null
+
+    fun getLastBandPower(): Double = lastBandPower
+    fun getLastTotalPower(): Double = lastTotalPower
+    fun getLastAnalysis(): SeizureAnalysisResult? = lastAnalysisResult
+
     fun addSample(x: Double, y: Double, z: Double): SeizureAnalysisResult? {
         val magnitude = sqrt(x * x + y * y + z * z) - 1.0
         buffer[writeIndex] = magnitude
@@ -34,7 +42,9 @@ class SeizureFftEngine(
         }
 
         if (filled && writeIndex % (windowSize / 2) == 0) {
-            return processWindow()
+            val result = processWindow()
+            lastAnalysisResult = result
+            return result
         }
         return null
     }
@@ -74,6 +84,9 @@ class SeizureFftEngine(
                 }
             }
         }
+
+        lastBandPower = seizurePower
+        lastTotalPower = totalPower
 
         val ratio = if (totalPower > 1e-6) (seizurePower / totalPower).toFloat() else 0.0f
         val totalPowerFloat = totalPower.toFloat()
