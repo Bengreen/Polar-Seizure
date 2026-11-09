@@ -7,10 +7,12 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -18,7 +20,6 @@ import kotlinx.coroutines.cancel
 import org.openseizuredetector.polar.MainActivity
 import org.openseizuredetector.polar.R
 import org.openseizuredetector.polar.dsp.SeizureFftEngine
-import org.openseizuredetector.polar.model.SeizureAlarmState
 import org.openseizuredetector.polar.watchdog.DeadmanWatchdog
 
 class PolarForegroundService : Service() {
@@ -61,7 +62,6 @@ class PolarForegroundService : Service() {
                 stopSelf()
             }
             ACTION_CANCEL_ALARM -> {
-                // User clicked "Cancel Alarm" on notification
                 updateNotification("Alarm cancelled by wearer")
             }
             else -> {
@@ -72,9 +72,27 @@ class PolarForegroundService : Service() {
     }
 
     private fun startMonitoring() {
-        wakeLock?.acquire(24 * 60 * 60 * 1000L) // 24 hours max
-        val notification = buildNotification("Monitoring active — Polar BLE connected")
-        startForeground(NOTIFICATION_ID, notification)
+        try {
+            wakeLock?.acquire(24 * 60 * 60 * 1000L) // 24 hours max
+            val notification = buildNotification("Monitoring active — Polar BLE connected")
+
+            val fgsType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+            } else {
+                0
+            }
+
+            ServiceCompat.startForeground(
+                this,
+                NOTIFICATION_ID,
+                notification,
+                fgsType
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private fun stopMonitoring() {
