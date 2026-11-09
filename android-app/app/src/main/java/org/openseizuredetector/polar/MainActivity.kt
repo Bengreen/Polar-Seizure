@@ -18,6 +18,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -37,6 +38,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -75,7 +77,8 @@ class MainActivity : ComponentActivity() {
                     onStartService = { startMonitoringService() },
                     onStopService = { stopMonitoringService() },
                     onConnectDevice = { deviceId -> connectDevice(deviceId) },
-                    onDisconnectDevice = { deviceId -> disconnectDevice(deviceId) }
+                    onDisconnectDevice = { deviceId -> disconnectDevice(deviceId) },
+                    onTriggerScan = { triggerScan() }
                 )
             }
         }
@@ -118,6 +121,13 @@ class MainActivity : ComponentActivity() {
         }
         startService(intent)
     }
+
+    private fun triggerScan() {
+        val intent = Intent(this, PolarForegroundService::class.java).apply {
+            action = PolarForegroundService.ACTION_START_SCAN
+        }
+        startService(intent)
+    }
 }
 
 @Composable
@@ -125,7 +135,8 @@ fun MainScreen(
     onStartService: () -> Unit,
     onStopService: () -> Unit,
     onConnectDevice: (String) -> Unit,
-    onDisconnectDevice: (String) -> Unit
+    onDisconnectDevice: (String) -> Unit,
+    onTriggerScan: () -> Unit
 ) {
     val context = LocalContext.current
     var isMonitoring by remember { mutableStateOf(false) }
@@ -239,10 +250,12 @@ fun MainScreen(
                     }
                 )
                 1 -> DevicesView(
+                    isMonitoring = isMonitoring,
                     devices = discoveredDevices,
                     connectedDeviceId = telemetry.connectedDeviceId,
                     onConnect = onConnectDevice,
-                    onDisconnect = onDisconnectDevice
+                    onDisconnect = onDisconnectDevice,
+                    onTriggerScan = onTriggerScan
                 )
                 2 -> DiagnosticsView(
                     telemetry = telemetry,
@@ -395,26 +408,93 @@ fun DashboardView(
 
 @Composable
 fun DevicesView(
+    isMonitoring: Boolean,
     devices: List<DiscoveredDevice>,
     connectedDeviceId: String?,
     onConnect: (String) -> Unit,
-    onDisconnect: (String) -> Unit
+    onDisconnect: (String) -> Unit,
+    onTriggerScan: () -> Unit
 ) {
+    var manualDeviceId by remember { mutableStateOf("") }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        Text(
-            text = "Nearby BLE Devices (${devices.size})",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = "Scanning for Polar Loop, Verity Sense, H10 sensors...",
-            style = MaterialTheme.typography.bodySmall,
-            color = Color.Gray
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Nearby BLE Devices (${devices.size})",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Scanning for Polar Loop, Verity Sense, H10 sensors...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+            }
+
+            Button(
+                onClick = onTriggerScan,
+                enabled = isMonitoring,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text("Scan")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Direct connect fallback card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = "Direct Connect by Device ID",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "If BLE scanner is throttled, enter the 8-character device ID printed on your Polar sensor (e.g. C2148A24):",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = manualDeviceId,
+                        onValueChange = { manualDeviceId = it.trim().uppercase() },
+                        placeholder = { Text("e.g. C2148A24") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    Button(
+                        onClick = {
+                            if (manualDeviceId.isNotEmpty()) {
+                                onConnect(manualDeviceId)
+                            }
+                        },
+                        enabled = isMonitoring && manualDeviceId.isNotEmpty()
+                    ) {
+                        Text("Connect")
+                    }
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(12.dp))
 
         if (devices.isEmpty()) {
@@ -425,7 +505,11 @@ fun DevicesView(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "No Polar devices discovered yet.\nEnsure device is awake and nearby.",
+                    text = if (isMonitoring) {
+                        "No Polar devices discovered yet.\nEnsure device is awake/worn, or enter ID above."
+                    } else {
+                        "Monitoring service is stopped.\nStart service on Dashboard to scan."
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.Gray
                 )

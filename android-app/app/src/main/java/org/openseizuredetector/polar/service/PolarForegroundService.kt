@@ -41,6 +41,8 @@ class PolarForegroundService : Service() {
         const val ACTION_CANCEL_ALARM = "ACTION_CANCEL_ALARM"
         const val ACTION_CONNECT_DEVICE = "ACTION_CONNECT_DEVICE"
         const val ACTION_DISCONNECT_DEVICE = "ACTION_DISCONNECT_DEVICE"
+        const val ACTION_START_SCAN = "ACTION_START_SCAN"
+        const val ACTION_STOP_SCAN = "ACTION_STOP_SCAN"
         const val EXTRA_DEVICE_ID = "EXTRA_DEVICE_ID"
     }
 
@@ -96,6 +98,13 @@ class PolarForegroundService : Service() {
                     polarBleClient?.disconnect(deviceId)
                 }
             }
+            ACTION_START_SCAN -> {
+                DiagnosticManager.log(LogLevel.INFO, "Manual scan requested by user.")
+                polarBleClient?.startScan()
+            }
+            ACTION_STOP_SCAN -> {
+                polarBleClient?.stopScan()
+            }
             else -> {
                 startMonitoring()
             }
@@ -124,8 +133,11 @@ class PolarForegroundService : Service() {
                 fgsType
             )
 
-            // Start scanning for nearby Polar wearables automatically on service startup
-            polarBleClient?.startScan()
+            // Start scanning for nearby Polar wearables with a slight delay to allow the
+            // Android Bluetooth stack & GATT server to fully bind after service initialization.
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                polarBleClient?.startScan()
+            }, 1200L)
         } catch (e: Exception) {
             DiagnosticManager.log(LogLevel.ERROR, "Error starting foreground service: ${e.localizedMessage}")
         }
