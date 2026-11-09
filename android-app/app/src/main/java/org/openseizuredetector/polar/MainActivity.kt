@@ -1,9 +1,15 @@
 package org.openseizuredetector.polar
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,10 +30,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import org.openseizuredetector.polar.model.SeizureAlarmState
 import org.openseizuredetector.polar.service.PolarForegroundService
 
@@ -38,21 +45,33 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 MainScreen(
-                    onStartService = {
-                        val intent = Intent(this, PolarForegroundService::class.java).apply {
-                            action = PolarForegroundService.ACTION_START
-                        }
-                        startForegroundService(intent)
-                    },
-                    onStopService = {
-                        val intent = Intent(this, PolarForegroundService::class.java).apply {
-                            action = PolarForegroundService.ACTION_STOP
-                        }
-                        startService(intent)
-                    }
+                    onStartService = { startMonitoringService() },
+                    onStopService = { stopMonitoringService() }
                 )
             }
         }
+    }
+
+    private fun startMonitoringService() {
+        try {
+            val intent = Intent(this, PolarForegroundService::class.java).apply {
+                action = PolarForegroundService.ACTION_START
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "Failed to start service: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun stopMonitoringService() {
+        val intent = Intent(this, PolarForegroundService::class.java).apply {
+            action = PolarForegroundService.ACTION_STOP
+        }
+        startService(intent)
     }
 }
 
@@ -61,8 +80,49 @@ fun MainScreen(
     onStartService: () -> Unit,
     onStopService: () -> Unit
 ) {
+    val context = LocalContext.current
     var isMonitoring by remember { mutableStateOf(false) }
     var alarmState by remember { mutableStateOf(SeizureAlarmState.NORMAL) }
+
+    val requiredPermissions = remember {
+        val list = mutableListOf<String>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            list.add(Manifest.permission.BLUETOOTH_SCAN)
+            list.add(Manifest.permission.BLUETOOTH_CONNECT)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            list.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        list
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissionsMap ->
+        val allGranted = permissionsMap.values.all { it }
+        if (allGranted) {
+            isMonitoring = true
+            onStartService()
+        } else {
+            Toast.makeText(
+                context,
+                "Bluetooth and Notification permissions are required to start seizure monitoring.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    fun checkAndStartService() {
+        val missing = requiredPermissions.filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isEmpty()) {
+            isMonitoring = true
+            onStartService()
+        } else {
+            permissionLauncher.launch(missing.toTypedArray())
+        }
+    }
 
     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
         Column(
@@ -108,8 +168,7 @@ fun MainScreen(
                 Button(
                     modifier = Modifier.weight(1f),
                     onClick = {
-                        isMonitoring = true
-                        onStartService()
+                        checkAndStartService()
                     }
                 ) {
                     Text("Start Service")
