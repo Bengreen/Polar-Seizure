@@ -20,6 +20,7 @@ class PolarBleClient(
     private val disposables = CompositeDisposable()
     private var scanDisposable: Disposable? = null
     private var accStreamDisposable: Disposable? = null
+    private var hrStreamDisposable: Disposable? = null
 
     private val fftEngine = SeizureFftEngine()
     private var connectedDeviceId: String? = null
@@ -94,13 +95,16 @@ class PolarBleClient(
                 )
                 connectedDeviceId = null
                 stopAccStreaming()
+                stopHrStreaming()
                 DiagnosticManager.updateTelemetry {
                     it.copy(
                         connectionState = "DISCONNECTED",
                         connectedDeviceId = null,
                         connectedDeviceName = null,
                         batteryLevel = null,
-                        isStreamingAcc = false
+                        heartRateBpm = null,
+                        isStreamingAcc = false,
+                        isStreamingHr = false
                     )
                 }
                 onAlarmStateChanged(SeizureAlarmState.DISCONNECTED)
@@ -111,8 +115,14 @@ class PolarBleClient(
                     LogLevel.INFO,
                     "BLE feature ready for $identifier: $feature"
                 )
-                if (feature == PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_ONLINE_STREAMING) {
-                    startAccStreaming(identifier)
+                when (feature) {
+                    PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_ONLINE_STREAMING -> {
+                        startAccStreaming(identifier)
+                    }
+                    PolarBleApi.PolarBleSdkFeature.FEATURE_HR -> {
+                        startHrStreaming(identifier)
+                    }
+                    else -> {}
                 }
             }
 
@@ -230,9 +240,27 @@ class PolarBleClient(
     }
 
     fun disconnect(deviceId: String) {
+        DiagnosticManager.log(LogLevel.INFO, "Disconnect requested for $deviceId. Stopping streams...")
+        stopAccStreaming()
+        stopHrStreaming()
         try {
-            DiagnosticManager.log(LogLevel.INFO, "Disconnecting from $deviceId...")
+            DiagnosticManager.log(LogLevel.INFO, "Calling api.disconnectFromDevice($deviceId)...")
             api.disconnectFromDevice(deviceId)
+            // Proactively update telemetry so UI state reflects immediate disconnection intent
+            if (connectedDeviceId == deviceId) {
+                connectedDeviceId = null
+                DiagnosticManager.updateTelemetry {
+                    it.copy(
+                        connectionState = "DISCONNECTED",
+                        connectedDeviceId = null,
+                        connectedDeviceName = null,
+                        batteryLevel = null,
+                        heartRateBpm = null,
+                        isStreamingAcc = false,
+                        isStreamingHr = false
+                    )
+                }
+            }
         } catch (e: Exception) {
             DiagnosticManager.log(LogLevel.ERROR, "Failed to disconnect $deviceId: ${e.localizedMessage}")
         }
@@ -331,6 +359,43 @@ class PolarBleClient(
         }
     }
 
+    private fun startHrStreaming(deviceId: String) {
+        stopHrStreaming()
+        DiagnosticManager.log(LogLevel.INFO, "Starting HR stream for $deviceId...")
+
+        hrStreamDisposable = api.startHrStreaming(deviceId)
+            .subscribe(
+                { hrData ->
+                    for (sample in hrData.samples) {
+                        DiagnosticManager.updateTelemetry {
+                            it.copy(
+                                isStreamingHr = true,
+                                heartRateBpm = sample.hr
+                            )
+                        }
+                    }
+                },
+                { error ->
+                    DiagnosticManager.log(
+                        LogLevel.WARN,
+                        "HR stream unavailable or failed for $deviceId: ${error.localizedMessage ?: error.javaClass.simpleName}"
+                    )
+                    DiagnosticManager.updateTelemetry { it.copy(isStreamingHr = false) }
+                }
+            )
+        disposables.add(hrStreamDisposable!!)
+    }
+
+    fun stopHrStreaming() {
+        hrStreamDisposable?.let {
+            if (!it.isDisposed) {
+                it.dispose()
+                DiagnosticManager.log(LogLevel.INFO, "HR stream stopped.")
+            }
+        }
+        hrStreamDisposable = null
+    }
+
     fun stopAccStreaming() {
         accStreamDisposable?.let {
             if (!it.isDisposed) {
@@ -344,6 +409,7 @@ class PolarBleClient(
     fun shutDown() {
         stopScan()
         stopAccStreaming()
+        stopHrStreaming()
         disposables.clear()
         api.shutDown()
         DiagnosticManager.log(LogLevel.INFO, "PolarBleClient shut down.")

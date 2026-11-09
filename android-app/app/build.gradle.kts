@@ -1,7 +1,22 @@
+import java.io.ByteArrayOutputStream
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+}
+
+fun getGitSha(): String {
+    return try {
+        val stdout = ByteArrayOutputStream()
+        exec {
+            commandLine("git", "rev-parse", "--short", "HEAD")
+            standardOutput = stdout
+        }
+        stdout.toString().trim()
+    } catch (e: Exception) {
+        "dev"
+    }
 }
 
 android {
@@ -14,6 +29,8 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+
+        buildConfigField("String", "GIT_SHA", "\"${getGitSha()}\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -36,6 +53,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

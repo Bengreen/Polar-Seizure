@@ -200,11 +200,19 @@ fun MainScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Polar-Seizure Monitor",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
+                Column {
+                    Text(
+                        text = "Polar-Seizure Monitor",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Build: sha-${BuildConfig.GIT_SHA}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
 
                 Box(
                     modifier = Modifier
@@ -320,6 +328,19 @@ fun DashboardView(
                         fontWeight = FontWeight.SemiBold
                     )
                 }
+                if (telemetry.heartRateBpm != null) {
+                    Text(
+                        text = "Heart Rate: ${telemetry.heartRateBpm} BPM",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFD32F2F)
+                    )
+                }
+                Text(
+                    text = "Streams: ACC: ${if (telemetry.isStreamingAcc) "ACTIVE" else "OFF"} | HR: ${if (telemetry.isStreamingHr) "ACTIVE" else "OFF"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
             }
         }
 
