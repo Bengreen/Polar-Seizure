@@ -26,6 +26,15 @@ class PolarBleClient(
     private var lastPacketTimestamp: Long = 0
     private var packetCount: Long = 0
 
+    private var lastScanAttemptTime: Long = 0
+    private var isScanRetryScheduled: Boolean = false
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    companion object {
+        private const val MIN_SCAN_INTERVAL_MS = 3000L
+        private const val SCAN_RETRY_DELAY_MS = 5000L
+    }
+
     val api: PolarBleApi = PolarBleApiDefaultImpl.defaultImplementation(
         context.applicationContext,
         setOf(
@@ -137,9 +146,18 @@ class PolarBleClient(
         })
     }
 
-    fun startScan() {
+    fun startScan(isRetry: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!isRetry && (now - lastScanAttemptTime) < MIN_SCAN_INTERVAL_MS) {
+            DiagnosticManager.log(LogLevel.WARN, "Scan request throttled (last scan was ${(now - lastScanAttemptTime)}ms ago). Please wait.")
+            return
+        }
+        lastScanAttemptTime = now
+
         stopScan()
-        DiagnosticManager.clearDevices()
+        if (!isRetry) {
+            DiagnosticManager.clearDevices()
+        }
         DiagnosticManager.log(LogLevel.INFO, "Starting BLE scan for nearby Polar devices...")
 
         scanDisposable = api.searchForDevice()
@@ -159,16 +177,39 @@ class PolarBleClient(
                     )
                 },
                 { error ->
-                    DiagnosticManager.log(
-                        LogLevel.ERROR,
-                        "BLE Scan error: ${error.localizedMessage ?: error.javaClass.simpleName}"
-                    )
+                    val errorMsg = error.localizedMessage ?: error.javaClass.simpleName
+                    val isRegistrationError = errorMsg.contains("errorCode: 2") || errorMsg.contains("SCAN_FAILED_APPLICATION_REGISTRATION_FAILED")
+
+                    if (isRegistrationError) {
+                        DiagnosticManager.log(
+                            LogLevel.ERROR,
+                            "BLE scanner registration busy/throttled (ScanCallback errorCode: 2)."
+                        )
+                        if (!isScanRetryScheduled) {
+                            isScanRetryScheduled = true
+                            DiagnosticManager.log(
+                                LogLevel.WARN,
+                                "Android BT daemon busy. Automatically retrying scan in ${SCAN_RETRY_DELAY_MS / 1000}s. You can also connect directly by device ID or toggle Bluetooth OFF/ON in Android Settings."
+                            )
+                            handler.postDelayed({
+                                isScanRetryScheduled = false
+                                startScan(isRetry = true)
+                            }, SCAN_RETRY_DELAY_MS)
+                        }
+                    } else {
+                        DiagnosticManager.log(
+                            LogLevel.ERROR,
+                            "BLE Scan error: $errorMsg"
+                        )
+                    }
                 }
             )
         disposables.add(scanDisposable!!)
     }
 
     fun stopScan() {
+        handler.removeCallbacksAndMessages(null)
+        isScanRetryScheduled = false
         scanDisposable?.let {
             if (!it.isDisposed) {
                 it.dispose()
