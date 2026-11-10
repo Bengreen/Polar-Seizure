@@ -10,6 +10,7 @@ import com.polar.sdk.api.model.PolarSensorSetting
 import io.reactivex.rxjava3.disposables.CompositeDisposable
 import io.reactivex.rxjava3.disposables.Disposable
 import java.util.UUID
+import org.openseizuredetector.polar.dsp.OpticalPulseEngine
 import org.openseizuredetector.polar.dsp.SeizureFftEngine
 import org.openseizuredetector.polar.model.SeizureAlarmState
 
@@ -22,8 +23,10 @@ class PolarBleClient(
     private var accStreamDisposable: Disposable? = null
     private var hrStreamDisposable: Disposable? = null
     private var ppiStreamDisposable: Disposable? = null
+    private var ppgStreamDisposable: Disposable? = null
 
     private val fftEngine = SeizureFftEngine()
+    private val pulseEngine = OpticalPulseEngine()
     private var connectedDeviceId: String? = null
     private var lastPacketTimestamp: Long = 0
     private var packetCount: Long = 0
@@ -120,6 +123,9 @@ class PolarBleClient(
                 connectedDeviceId = null
                 stopAccStreaming()
                 stopHrStreaming()
+                stopPpiStreaming()
+                stopPpgStreaming()
+                pulseEngine.reset()
                 DiagnosticManager.updateTelemetry {
                     it.copy(
                         connectionState = "DISCONNECTED",
@@ -271,6 +277,7 @@ class PolarBleClient(
         stopAccStreaming()
         stopHrStreaming()
         stopPpiStreaming()
+        stopPpgStreaming()
         try {
             DiagnosticManager.log(LogLevel.INFO, "Calling api.disconnectFromDevice($deviceId)...")
             api.disconnectFromDevice(deviceId)
@@ -310,8 +317,13 @@ class PolarBleClient(
                             "$deviceId does not support real-time ACC online streaming (available: $availableTypes)."
                         )
                     }
-                    if (availableTypes.contains(PolarBleApi.PolarDeviceDataType.PPI)) {
-                        // Delay PPI start by 2500ms so ACC PMD measurement control point negotiation completes first
+                    // For optical wrist devices like Polar Loop / Polar 360 in SDK Mode, PPI/HR streams are disallowed by device firmware.
+                    // Prioritize raw optical PPG stream (22 Hz central green channels) to compute pulse rate on-phone.
+                    if (availableTypes.contains(PolarBleApi.PolarDeviceDataType.PPG)) {
+                        handler.postDelayed({
+                            startPpgStreaming(deviceId)
+                        }, 2500L)
+                    } else if (availableTypes.contains(PolarBleApi.PolarDeviceDataType.PPI)) {
                         handler.postDelayed({
                             startPpiStreaming(deviceId)
                         }, 2500L)
@@ -553,6 +565,81 @@ class PolarBleClient(
         ppiStreamDisposable = null
     }
 
+    private fun startPpgStreaming(deviceId: String) {
+        stopPpgStreaming()
+        DiagnosticManager.log(LogLevel.INFO, "Requesting PPG stream settings for $deviceId...")
+
+        val ppgSettingsDisposable = api.requestStreamSettings(deviceId, PolarBleApi.PolarDeviceDataType.PPG)
+            .subscribe(
+                { settings ->
+                    DiagnosticManager.log(LogLevel.INFO, "Supported PPG settings for $deviceId: ${settings.settings}. Starting PPG stream...")
+                    ppgStreamDisposable = api.startPpgStreaming(deviceId, settings)
+                        .subscribe(
+                            { ppgData -> onPpgDataReceived(ppgData) },
+                            { error ->
+                                DiagnosticManager.log(LogLevel.WARN, "PPG stream error for $deviceId: ${error.localizedMessage}")
+                            }
+                        )
+                    disposables.add(ppgStreamDisposable!!)
+                },
+                { error ->
+                    DiagnosticManager.log(LogLevel.WARN, "Could not query PPG settings ($error). Attempting direct default PPG stream...")
+                    ppgStreamDisposable = api.startPpgStreaming(deviceId, PolarSensorSetting(emptyMap()))
+                        .subscribe(
+                            { ppgData -> onPpgDataReceived(ppgData) },
+                            { streamErr ->
+                                DiagnosticManager.log(LogLevel.WARN, "Default PPG stream failed for $deviceId: ${streamErr.localizedMessage}")
+                            }
+                        )
+                    disposables.add(ppgStreamDisposable!!)
+                }
+            )
+        disposables.add(ppgSettingsDisposable)
+    }
+
+    private fun onPpgDataReceived(ppgData: com.polar.sdk.api.model.PolarPpgData) {
+        val now = System.currentTimeMillis()
+        var latestBpm: Int? = null
+
+        for (sample in ppgData.samples) {
+            // Polar 360 / Loop streams 2 green optical photodiode channels
+            val firstChannel = sample.channelSamples.firstOrNull()?.toLong() ?: continue
+            val bpm = pulseEngine.processSample(firstChannel, now)
+            if (bpm != null) {
+                latestBpm = bpm
+            }
+        }
+
+        if (latestBpm != null && latestBpm > 0) {
+            DiagnosticManager.updateTelemetry { current ->
+                val updatedHrHistory = current.hrHistory.toMutableList()
+                val lastEntry = updatedHrHistory.lastOrNull()
+                // Record into graph at ~1 Hz (or when BPM value changes)
+                if (lastEntry == null || (now - lastEntry.timestamp) >= 1000L || lastEntry.bpm != latestBpm) {
+                    updatedHrHistory.add(HrHistoryPoint(timestamp = now, bpm = latestBpm))
+                    if (updatedHrHistory.size > HR_MAX_POINTS) {
+                        updatedHrHistory.removeAt(0)
+                    }
+                }
+                current.copy(
+                    isStreamingHr = true,
+                    heartRateBpm = latestBpm,
+                    hrHistory = updatedHrHistory
+                )
+            }
+        }
+    }
+
+    fun stopPpgStreaming() {
+        ppgStreamDisposable?.let {
+            if (!it.isDisposed) {
+                it.dispose()
+                DiagnosticManager.log(LogLevel.INFO, "PPG stream stopped.")
+            }
+        }
+        ppgStreamDisposable = null
+    }
+
     fun stopAccStreaming() {
         accStreamDisposable?.let {
             if (!it.isDisposed) {
@@ -568,6 +655,7 @@ class PolarBleClient(
         stopAccStreaming()
         stopHrStreaming()
         stopPpiStreaming()
+        stopPpgStreaming()
         disposables.clear()
         api.shutDown()
         DiagnosticManager.log(LogLevel.INFO, "PolarBleClient shut down.")
