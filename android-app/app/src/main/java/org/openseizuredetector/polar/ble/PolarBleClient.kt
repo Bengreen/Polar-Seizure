@@ -26,6 +26,7 @@ class PolarBleClient(
     private var connectedDeviceId: String? = null
     private var lastPacketTimestamp: Long = 0
     private var packetCount: Long = 0
+    private var lastChartSampleTime: Long = 0
 
     private var lastScanAttemptTime: Long = 0
     private var isScanRetryScheduled: Boolean = false
@@ -34,6 +35,9 @@ class PolarBleClient(
     companion object {
         private const val MIN_SCAN_INTERVAL_MS = 3000L
         private const val SCAN_RETRY_DELAY_MS = 5000L
+        // Chart window: 30 seconds at 10 Hz sampling rate = 300 points
+        private const val CHART_SAMPLE_INTERVAL_MS = 100L
+        private const val CHART_MAX_POINTS = 300
     }
 
     val api: PolarBleApi = PolarBleApiDefaultImpl.defaultImplementation(
@@ -390,8 +394,10 @@ class PolarBleClient(
             val totalPower = fftEngine.getLastTotalPower()
             val ratio = if (totalPower > 0.0) (bandPower / totalPower) * 100.0 else 0.0
 
-            // Sample down waveform history for UI rendering (~20-25 Hz chart points)
-            val historyPoint = if (packetCount % 2 == 0L) {
+            // Time-based chart sampling: record 1 point every 100ms for a true 30-second window (300 points)
+            val shouldRecordChartPoint = (now - lastChartSampleTime) >= CHART_SAMPLE_INTERVAL_MS
+            val historyPoint = if (shouldRecordChartPoint) {
+                lastChartSampleTime = now
                 AccelHistoryPoint(
                     timestamp = now,
                     x = gx.toFloat(),
@@ -406,7 +412,7 @@ class PolarBleClient(
                 val newHistory = if (historyPoint != null) {
                     val updated = current.accelHistory.toMutableList()
                     updated.add(historyPoint)
-                    if (updated.size > 60) {
+                    if (updated.size > CHART_MAX_POINTS) {
                         updated.removeAt(0)
                     }
                     updated
