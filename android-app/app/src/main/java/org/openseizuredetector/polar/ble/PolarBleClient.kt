@@ -21,6 +21,7 @@ class PolarBleClient(
     private var scanDisposable: Disposable? = null
     private var accStreamDisposable: Disposable? = null
     private var hrStreamDisposable: Disposable? = null
+    private var ppiStreamDisposable: Disposable? = null
 
     private val fftEngine = SeizureFftEngine()
     private var connectedDeviceId: String? = null
@@ -269,6 +270,7 @@ class PolarBleClient(
         DiagnosticManager.log(LogLevel.INFO, "Disconnect requested for $deviceId. Stopping streams...")
         stopAccStreaming()
         stopHrStreaming()
+        stopPpiStreaming()
         try {
             DiagnosticManager.log(LogLevel.INFO, "Calling api.disconnectFromDevice($deviceId)...")
             api.disconnectFromDevice(deviceId)
@@ -307,6 +309,9 @@ class PolarBleClient(
                             LogLevel.WARN,
                             "$deviceId does not support real-time ACC online streaming (available: $availableTypes)."
                         )
+                    }
+                    if (availableTypes.contains(PolarBleApi.PolarDeviceDataType.PPI)) {
+                        startPpiStreaming(deviceId)
                     }
                 },
                 { error ->
@@ -486,6 +491,52 @@ class PolarBleClient(
         hrStreamDisposable = null
     }
 
+    private fun startPpiStreaming(deviceId: String) {
+        stopPpiStreaming()
+        DiagnosticManager.log(LogLevel.INFO, "Starting PPI optical stream for $deviceId...")
+
+        ppiStreamDisposable = api.startPpiStreaming(deviceId)
+            .subscribe(
+                { ppiData ->
+                    val now = System.currentTimeMillis()
+                    for (sample in ppiData.samples) {
+                        // Accept samples that are not marked as motion blocker artifacts and have valid HR
+                        if (sample.hr > 0 && !sample.blockerBit) {
+                            DiagnosticManager.updateTelemetry { current ->
+                                val updatedHrHistory = current.hrHistory.toMutableList()
+                                updatedHrHistory.add(HrHistoryPoint(timestamp = now, bpm = sample.hr))
+                                if (updatedHrHistory.size > HR_MAX_POINTS) {
+                                    updatedHrHistory.removeAt(0)
+                                }
+                                current.copy(
+                                    isStreamingHr = true,
+                                    heartRateBpm = sample.hr,
+                                    hrHistory = updatedHrHistory
+                                )
+                            }
+                        }
+                    }
+                },
+                { error ->
+                    DiagnosticManager.log(
+                        LogLevel.WARN,
+                        "PPI stream failed for $deviceId: ${error.localizedMessage ?: error.javaClass.simpleName}"
+                    )
+                }
+            )
+        disposables.add(ppiStreamDisposable!!)
+    }
+
+    fun stopPpiStreaming() {
+        ppiStreamDisposable?.let {
+            if (!it.isDisposed) {
+                it.dispose()
+                DiagnosticManager.log(LogLevel.INFO, "PPI stream stopped.")
+            }
+        }
+        ppiStreamDisposable = null
+    }
+
     fun stopAccStreaming() {
         accStreamDisposable?.let {
             if (!it.isDisposed) {
@@ -500,6 +551,7 @@ class PolarBleClient(
         stopScan()
         stopAccStreaming()
         stopHrStreaming()
+        stopPpiStreaming()
         disposables.clear()
         api.shutDown()
         DiagnosticManager.log(LogLevel.INFO, "PolarBleClient shut down.")
