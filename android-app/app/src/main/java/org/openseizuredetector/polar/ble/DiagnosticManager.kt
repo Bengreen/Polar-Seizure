@@ -36,6 +36,11 @@ data class AccelHistoryPoint(
     val energyRatio: Float
 )
 
+data class HrHistoryPoint(
+    val timestamp: Long,
+    val bpm: Int
+)
+
 data class LiveBleDiagnostics(
     val connectionState: String = "DISCONNECTED",
     val connectedDeviceId: String? = null,
@@ -54,7 +59,8 @@ data class LiveBleDiagnostics(
     val totalPower: Double = 0.0,
     val energyRatioPercent: Double = 0.0,
     val isStillnessGated: Boolean = true,
-    val accelHistory: List<AccelHistoryPoint> = emptyList()
+    val accelHistory: List<AccelHistoryPoint> = emptyList(),
+    val hrHistory: List<HrHistoryPoint> = emptyList()
 )
 
 object DiagnosticManager {
