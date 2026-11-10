@@ -384,10 +384,17 @@ fun DashboardView(
             }
         }
 
-        // Accel preview & Live Waveform
+        // Accel preview & Live Waveform (30-Second Rolling Window)
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text(text = "Live Accelerometer & Energy Over Time", style = MaterialTheme.typography.titleSmall)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(text = "Live Accelerometer & Energy", style = MaterialTheme.typography.titleSmall)
+                    Text(text = "30s Window", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                }
                 Spacer(modifier = Modifier.height(6.dp))
 
                 // XYZ Text metrics
@@ -408,7 +415,7 @@ fun DashboardView(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(120.dp)
+                        .height(130.dp)
                         .background(Color(0xFF1E1E1E), shape = RoundedCornerShape(8.dp))
                         .padding(8.dp)
                 ) {
@@ -417,7 +424,16 @@ fun DashboardView(
                             val w = size.width
                             val h = size.height
                             val midY = h / 2f
-                            val stepX = w / (history.size - 1).coerceAtLeast(1)
+                            // Fixed 300 points scale (30 seconds) so the chart scrolls smoothly across the full width
+                            val maxPoints = 300
+                            val stepX = w / (maxPoints - 1).toFloat()
+                            val startOffsetIndex = (maxPoints - history.size).coerceAtLeast(0)
+
+                            // 10-second grid lines
+                            val grid10s = w * (10f / 30f)
+                            val grid20s = w * (20f / 30f)
+                            drawLine(color = Color(0xFF2C2C2C), start = Offset(grid10s, 0f), end = Offset(grid10s, h), strokeWidth = 1f)
+                            drawLine(color = Color(0xFF2C2C2C), start = Offset(grid20s, 0f), end = Offset(grid20s, h), strokeWidth = 1f)
 
                             // Center baseline (0g)
                             drawLine(
@@ -445,7 +461,7 @@ fun DashboardView(
                             fun scaleEnergy(ratioPct: Float): Float = (h - ((ratioPct / 100f) * h)).coerceIn(0f, h)
 
                             history.forEachIndexed { i, pt ->
-                                val xPos = i * stepX
+                                val xPos = (startOffsetIndex + i) * stepX
                                 if (i == 0) {
                                     pathX.moveTo(xPos, scaleAcc(pt.x))
                                     pathY.moveTo(xPos, scaleAcc(pt.y))
@@ -459,10 +475,10 @@ fun DashboardView(
                                 }
                             }
 
-                            drawPath(pathX, color = Color(0xFFE53935), style = Stroke(width = 2f))
-                            drawPath(pathY, color = Color(0xFF43A047), style = Stroke(width = 2f))
-                            drawPath(pathZ, color = Color(0xFF1E88E5), style = Stroke(width = 2f))
-                            drawPath(pathEnergy, color = Color(0xFFFFD54F), style = Stroke(width = 3f))
+                            drawPath(pathX, color = Color(0xFFE53935), style = Stroke(width = 1.8f))
+                            drawPath(pathY, color = Color(0xFF43A047), style = Stroke(width = 1.8f))
+                            drawPath(pathZ, color = Color(0xFF1E88E5), style = Stroke(width = 1.8f))
+                            drawPath(pathEnergy, color = Color(0xFFFFD54F), style = Stroke(width = 2.5f))
                         }
                     } else {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -487,7 +503,7 @@ fun DashboardView(
                         Text(text = "● 3-8Hz Energy", color = Color(0xFFFFD54F), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                     Text(
-                        text = "Latency: ${telemetry.lastPacketLatencyMs} ms",
+                        text = "-30s ⟵ Now",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.Gray,
                         fontSize = 11.sp
