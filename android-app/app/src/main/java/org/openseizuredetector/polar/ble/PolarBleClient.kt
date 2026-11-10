@@ -311,7 +311,10 @@ class PolarBleClient(
                         )
                     }
                     if (availableTypes.contains(PolarBleApi.PolarDeviceDataType.PPI)) {
-                        startPpiStreaming(deviceId)
+                        // Delay PPI start by 2500ms so ACC PMD measurement control point negotiation completes first
+                        handler.postDelayed({
+                            startPpiStreaming(deviceId)
+                        }, 2500L)
                     }
                 },
                 { error ->
