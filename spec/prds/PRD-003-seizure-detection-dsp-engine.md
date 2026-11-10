@@ -126,3 +126,30 @@ To eliminate transient spikes and accidental knocks, the system enforces OpenSei
 | **Sliding Step / Overlap** | **50% Overlap** (2.5s step) | Balances real-time responsiveness (<2.5s latency between window evaluations) with low CPU utilization on the Android phone. |
 | **Stillness / Quiet Gate** | **$\text{Var}(\|a\|) < 0.05g$** | Bypasses FFT computation completely while wearer is resting or sleeping, reducing Android battery consumption to $\le 3.5\%$ per hour. |
 | **Offloaded Architecture** | **Sensor $\to$ Phone** | Polar Loop Gen2 only acts as a sensor node; all mathematical and spectral processing runs on the phone. |
+
+---
+
+## 6. Multi-Modal Optical PPG Integration & Advanced Diagnostic Options [Roadmap / Deferred Options]
+
+While 3-axis accelerometer FFT spectral analysis serves as the primary detector for motor clonic convulsions, the continuous dual-channel optical Photoplethysmography (PPG) sensor on the Polar Loop / Polar 360 provides critical multi-modal diagnostic vectors. The following options are specified for incremental implementation:
+
+### 6.1 Autonomic Biomarkers & Heart Rate Variability (HRV)
+* **Ictal Tachycardia & Bradycardia:** Over 80% of generalized tonic-clonic and focal seizures cause rapid shifts in the autonomic nervous system. Tracking sudden BPM acceleration concurrent with onset motion accelerates confidence scoring.
+* **Beat-to-Beat Variability (RMSSD & PPI):** Sub-second timing between optical pulse systolic peaks provides real-time parasympathetic / sympathetic autonomic tone, enabling pre-ictal detection before motor convulsion begins.
+
+### 6.2 Motion Artifact Rejection via Optical-Kinematic Cross-Correlation
+* **The Problem:** Benign daily rhythmic activities (e.g. brushing teeth, scrubbing, using vibrating tools) can mimic 3–8 Hz clonic acceleration and cause false positive alarms.
+* **The Solution:** True seizure clonic convulsions generate high muscle rigidity and violent hemodynamic shifts. By cross-correlating optical PPG waveform deformation against accelerometer frequency:
+  * If periodic accelerometer signals align directly with optical baseline artifacts without genuine systolic volume expansion, the signal is recognized as non-ictal motion artifact and suppressed.
+  * If optical pulse intervals remain coherent or exhibit authentic ictal tachycardia, the alarm is confirmed.
+
+### 6.3 SUDEP Risk Screening & Post-Ictal Respiratory / Perfusion Monitoring
+* **Sudden Unexpected Death in Epilepsy (SUDEP):** The primary cause of epilepsy-related mortality, usually occurring post-ictally due to central apnea, hypoventilation, and cardiac arrhythmias.
+* **Perfusion Index & Pulse Amplitude:** Tracking AC-to-DC optical ratios immediately post-seizure identifies severe peripheral vasoconstriction or circulatory collapse.
+* **Respiratory Rate Extraction (PPG Baseline Modulation):** Slow-frequency baseline modulation (0.1–0.4 Hz) in raw optical photodiode signals tracks breathing rates, enabling the system to trigger urgent SUDEP / respiratory arrest warnings if post-ictal breathing ceases.
+
+### 6.4 Adaptive Telemetry Escalation & Incident Ring Buffer Storage
+To achieve continuous battery longevity while capturing all forensic signal data:
+1. **Low-Power Intermittent Pulse Sampling:** During routine resting states, optical LEDs duty-cycle on for 15s every 2–5 minutes.
+2. **ACC-Triggered Escalation:** The instant movement power $\text{Power}_{\text{ROI}}$ or acceleration variance rises, the optical PPG stream escalates to maximum sampling frequency (22 Hz / 50 Hz).
+3. **Forensic Ring Buffer Retention:** The daemon retains a rolling 60-second FIFO buffer of raw uncompressed ACC and PPG samples in memory. On alarm or suspect trigger, the pre-incident window plus the active event and recovery period are persisted to disk and bundled for carer/neurologist review.
