@@ -51,6 +51,23 @@ To balance continuous 24-hour monitoring with near-real-time alarm latency, the 
    * **Stillness / Quiet Gate:** The phone evaluates acceleration magnitude variance $|a|$ over a short window before running the FFT. If the user is resting or asleep (variance $<0.05g$), the computationally expensive FFT loop is bypassed, keeping CPU usage minimal ($\le 3.5\%$ per hour).
    * **Optimized Coroutine Processing:** Sensor packet ingestion and sliding window processing execute on lightweight Kotlin coroutines (`Dispatchers.Default`) without allocating unnecessary temporary objects.
 
+### 2.4 Adaptive Dual-Mode Optical HR/PPG Sampling & Incident Data Preservation
+The continuous optical photodiode LED on optical wristbands (such as Polar Loop / Polar 360) is one of the highest consumers of battery power. To ensure multi-day battery life while preserving life-critical physiological telemetry, the Android daemon operates an **Adaptive Dual-Mode Sampling Controller**:
+
+1. **Baseline / Low-Power Monitoring Mode (Routine State):**
+   * **Accelerometer (ACC):** Streams continuously at 25 Hz (minimal radio/sensor power).
+   * **Optical Heart Rate (HR/PPG):** Operates on **intermittent duty-cycled sample intervals** rather than continuous 22 Hz streaming:
+     * *Interval Duty Cycle:* Active optical sample window of 15 seconds every 2 to 5 minutes (configurable in settings).
+     * *Battery Preservation:* Enables the optical LEDs on the Polar Loop to shut off for >80% of the monitoring cycle, dramatically reducing optical power draw and extending wearable battery life.
+2. **Incident Escalation Mode (Motion / ACC Suspect Trigger):**
+   * **Trigger Condition:** The moment the ACC signal processing engine detects elevated movement or suspect spectral energy approaching the pre-warning threshold ($\text{Power}_{\text{ROI}} \ge 0.5 \times \text{AlarmThresh}$ or $\text{Variance}(|a|) > 0.15g$):
+   * **Instant Optical Escalation:** The Android daemon immediately turns on continuous, high-frequency optical PPG streaming ($22\text{ Hz}$ or $50\text{ Hz}$).
+   * **Biometric Cross-Validation:** High-rate optical data is ingested immediately to extract fine-grained Heart Rate (BPM), beat-to-beat intervals, and perfusion amplitude to confirm whether autonomic tachycardia/bradycardia accompanies the rhythmic motion.
+3. **Circular Incident Data Buffer & Forensic Preservation:**
+   * **Pre-Incident Rolling Ring Buffer:** The Android daemon retains a circular ring buffer in RAM of the last 60 seconds of raw ACC vectors and HR/PPG frames.
+   * **Event Persistence on Incident / Warning / Alarm:** When an incident trigger or warning occurs, the 60 seconds of pre-incident data plus the entire duration of the active incident (and 60 seconds post-incident recovery) are permanently saved to local SQLite/disk storage (`IncidentCaptureRecord`) and staged for cloud telemetry dispatch.
+   * **Neurological Review Trail:** Ensures that even with baseline duty-cycling, zero data is lost for clinical review when a true seizure or suspicious event occurs.
+
 ---
 
 ## 3. Sensor Telemetry Dead Man's Handle [SPECIFIED / DEFERRED IMPLEMENTATION]
