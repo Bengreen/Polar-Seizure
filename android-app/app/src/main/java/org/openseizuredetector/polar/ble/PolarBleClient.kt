@@ -327,8 +327,21 @@ class PolarBleClient(
 
     private fun startAccStreaming(deviceId: String) {
         stopAccStreaming()
-        DiagnosticManager.log(LogLevel.INFO, "Requesting ACC stream settings for $deviceId...")
-        requestAndStartAccStream(deviceId)
+        DiagnosticManager.log(LogLevel.INFO, "Enabling SDK mode for $deviceId to configure ACC stream...")
+
+        val sdkModeDisposable = api.enableSDKMode(deviceId)
+            .onErrorComplete()
+            .subscribe(
+                {
+                    DiagnosticManager.log(LogLevel.INFO, "SDK mode enabled (or skipped). Requesting ACC stream settings for $deviceId...")
+                    requestAndStartAccStream(deviceId)
+                },
+                { error ->
+                    DiagnosticManager.log(LogLevel.WARN, "enableSDKMode error: ${error.localizedMessage}. Proceeding to request ACC settings directly...")
+                    requestAndStartAccStream(deviceId)
+                }
+            )
+        disposables.add(sdkModeDisposable)
     }
 
     private fun requestAndStartAccStream(deviceId: String) {
