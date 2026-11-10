@@ -47,6 +47,23 @@ class PolarForegroundService : Service() {
         const val EXTRA_DEVICE_ID = "EXTRA_DEVICE_ID"
     }
 
+    private fun initPolarClient() {
+        if (polarBleClient == null) {
+            polarBleClient = PolarBleClient(this) { alarmState ->
+                watchdog.feed()
+                if (alarmState != lastReportedState) {
+                    lastReportedState = alarmState
+                    when (alarmState) {
+                        SeizureAlarmState.WARNING -> updateNotification("⚠️ WARNING: Rhythmic seizure motion detected")
+                        SeizureAlarmState.ALARM -> updateNotification("🚨 ALARM: Prolonged seizure activity confirmed!")
+                        SeizureAlarmState.DISCONNECTED -> updateNotification("Sensor disconnected")
+                        SeizureAlarmState.NORMAL -> updateNotification("Monitoring active — Normal")
+                    }
+                }
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
@@ -66,21 +83,11 @@ class PolarForegroundService : Service() {
             }
         }
 
-        polarBleClient = PolarBleClient(this) { alarmState ->
-            watchdog.feed()
-            if (alarmState != lastReportedState) {
-                lastReportedState = alarmState
-                when (alarmState) {
-                    SeizureAlarmState.WARNING -> updateNotification("⚠️ WARNING: Rhythmic seizure motion detected")
-                    SeizureAlarmState.ALARM -> updateNotification("🚨 ALARM: Prolonged seizure activity confirmed!")
-                    SeizureAlarmState.DISCONNECTED -> updateNotification("Sensor disconnected")
-                    SeizureAlarmState.NORMAL -> updateNotification("Monitoring active — Normal")
-                }
-            }
-        }
+        initPolarClient()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        initPolarClient()
         when (intent?.action) {
             ACTION_STOP -> {
                 DiagnosticManager.log(LogLevel.INFO, "Foreground service received STOP action.")
@@ -112,6 +119,9 @@ class PolarForegroundService : Service() {
             ACTION_STOP_SCAN -> {
                 polarBleClient?.stopScan()
             }
+            ACTION_START -> {
+                startMonitoring()
+            }
             else -> {
                 startMonitoring()
             }
@@ -120,9 +130,13 @@ class PolarForegroundService : Service() {
     }
 
     private fun startMonitoring() {
+        initPolarClient()
+        DiagnosticManager.updateTelemetry { it.copy(isServiceRunning = true) }
         try {
-            wakeLock?.acquire(24 * 60 * 60 * 1000L) // 24 hours max
-            DiagnosticManager.log(LogLevel.INFO, "Partial WakeLock acquired.")
+            if (wakeLock?.isHeld != true) {
+                wakeLock?.acquire(24 * 60 * 60 * 1000L) // 24 hours max
+                DiagnosticManager.log(LogLevel.INFO, "Partial WakeLock acquired.")
+            }
             val notification = buildNotification("Monitoring active — Scanning for Polar devices")
 
             val fgsType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -151,6 +165,18 @@ class PolarForegroundService : Service() {
     }
 
     private fun stopMonitoring() {
+        DiagnosticManager.updateTelemetry {
+            it.copy(
+                isServiceRunning = false,
+                connectionState = "DISCONNECTED",
+                connectedDeviceId = null,
+                connectedDeviceName = null,
+                batteryLevel = null,
+                heartRateBpm = null,
+                isStreamingAcc = false,
+                isStreamingHr = false
+            )
+        }
         polarBleClient?.shutDown()
         polarBleClient = null
 
@@ -158,7 +184,6 @@ class PolarForegroundService : Service() {
             wakeLock?.release()
             DiagnosticManager.log(LogLevel.INFO, "Partial WakeLock released.")
         }
-        serviceScope.cancel()
     }
 
     private fun buildNotification(statusText: String): Notification {

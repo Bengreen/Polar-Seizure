@@ -146,11 +146,10 @@ fun MainScreen(
     onTriggerScan: () -> Unit
 ) {
     val context = LocalContext.current
-    var isMonitoring by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableIntStateOf(0) }
-
     val discoveredDevices by DiagnosticManager.discoveredDevices.collectAsState()
     val telemetry by DiagnosticManager.telemetry.collectAsState()
+    val isMonitoring = telemetry.isServiceRunning
     val logs by DiagnosticManager.logs.collectAsState()
 
     val requiredPermissions = remember {
@@ -170,7 +169,6 @@ fun MainScreen(
     ) { permissionsMap ->
         val allGranted = permissionsMap.values.all { it }
         if (allGranted) {
-            isMonitoring = true
             onStartService()
         } else {
             Toast.makeText(
@@ -186,7 +184,6 @@ fun MainScreen(
             ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
         }
         if (missing.isEmpty()) {
-            isMonitoring = true
             onStartService()
         } else {
             permissionLauncher.launch(missing.toTypedArray())
@@ -259,10 +256,7 @@ fun MainScreen(
                     isMonitoring = isMonitoring,
                     telemetry = telemetry,
                     onStart = { checkAndStartService() },
-                    onStop = {
-                        isMonitoring = false
-                        onStopService()
-                    }
+                    onStop = { onStopService() }
                 )
                 1 -> DevicesView(
                     isMonitoring = isMonitoring,
