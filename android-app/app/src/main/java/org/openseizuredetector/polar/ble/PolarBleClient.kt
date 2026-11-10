@@ -42,7 +42,8 @@ class PolarBleClient(
             PolarBleApi.PolarBleSdkFeature.FEATURE_HR,
             PolarBleApi.PolarBleSdkFeature.FEATURE_BATTERY_INFO,
             PolarBleApi.PolarBleSdkFeature.FEATURE_DEVICE_INFO,
-            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_ONLINE_STREAMING
+            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_ONLINE_STREAMING,
+            PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_SDK_MODE
         )
     )
 
@@ -117,10 +118,13 @@ class PolarBleClient(
                 )
                 when (feature) {
                     PolarBleApi.PolarBleSdkFeature.FEATURE_POLAR_ONLINE_STREAMING -> {
-                        startAccStreaming(identifier)
+                        queryAvailableStreamsAndStart(identifier)
                     }
                     PolarBleApi.PolarBleSdkFeature.FEATURE_HR -> {
-                        startHrStreaming(identifier)
+                        // Delay HR start slightly so ACC PMD negotiation completes first without control point contention
+                        handler.postDelayed({
+                            startHrStreaming(identifier)
+                        }, 1000L)
                     }
                     else -> {}
                 }
@@ -266,10 +270,54 @@ class PolarBleClient(
         }
     }
 
+    private fun queryAvailableStreamsAndStart(deviceId: String) {
+        val queryDisposable = api.getAvailableOnlineStreamDataTypes(deviceId)
+            .subscribe(
+                { availableTypes ->
+                    DiagnosticManager.log(
+                        LogLevel.SUCCESS,
+                        "Online stream data types supported by $deviceId: $availableTypes"
+                    )
+                    if (availableTypes.contains(PolarBleApi.PolarDeviceDataType.ACC)) {
+                        startAccStreaming(deviceId)
+                    } else {
+                        DiagnosticManager.log(
+                            LogLevel.WARN,
+                            "$deviceId does not support real-time ACC online streaming (available: $availableTypes)."
+                        )
+                    }
+                },
+                { error ->
+                    DiagnosticManager.log(
+                        LogLevel.WARN,
+                        "Could not query available stream types ($error). Attempting direct ACC stream..."
+                    )
+                    startAccStreaming(deviceId)
+                }
+            )
+        disposables.add(queryDisposable)
+    }
+
     private fun startAccStreaming(deviceId: String) {
         stopAccStreaming()
-        DiagnosticManager.log(LogLevel.INFO, "Requesting ACC stream settings for $deviceId...")
+        DiagnosticManager.log(LogLevel.INFO, "Enabling SDK mode for $deviceId to configure ACC stream...")
 
+        val sdkModeDisposable = api.enableSDKMode(deviceId)
+            .onErrorComplete()
+            .subscribe(
+                {
+                    DiagnosticManager.log(LogLevel.INFO, "SDK mode enabled (or skipped). Requesting ACC stream settings for $deviceId...")
+                    requestAndStartAccStream(deviceId)
+                },
+                { error ->
+                    DiagnosticManager.log(LogLevel.WARN, "enableSDKMode error: ${error.localizedMessage}. Proceeding to request ACC settings directly...")
+                    requestAndStartAccStream(deviceId)
+                }
+            )
+        disposables.add(sdkModeDisposable)
+    }
+
+    private fun requestAndStartAccStream(deviceId: String) {
         val streamSettingsDisposable = api.requestStreamSettings(deviceId, PolarBleApi.PolarDeviceDataType.ACC)
             .subscribe(
                 { settings ->
@@ -342,8 +390,31 @@ class PolarBleClient(
             val totalPower = fftEngine.getLastTotalPower()
             val ratio = if (totalPower > 0.0) (bandPower / totalPower) * 100.0 else 0.0
 
-            DiagnosticManager.updateTelemetry {
-                it.copy(
+            // Sample down waveform history for UI rendering (~20-25 Hz chart points)
+            val historyPoint = if (packetCount % 2 == 0L) {
+                AccelHistoryPoint(
+                    timestamp = now,
+                    x = gx.toFloat(),
+                    y = gy.toFloat(),
+                    z = gz.toFloat(),
+                    magnitude = magnitude.toFloat(),
+                    energyRatio = ratio.toFloat()
+                )
+            } else null
+
+            DiagnosticManager.updateTelemetry { current ->
+                val newHistory = if (historyPoint != null) {
+                    val updated = current.accelHistory.toMutableList()
+                    updated.add(historyPoint)
+                    if (updated.size > 60) {
+                        updated.removeAt(0)
+                    }
+                    updated
+                } else {
+                    current.accelHistory
+                }
+
+                current.copy(
                     isStreamingAcc = true,
                     lastPacketLatencyMs = latency,
                     lastAccX = gx,
@@ -353,7 +424,8 @@ class PolarBleClient(
                     seizurePower3to8Hz = bandPower,
                     totalPower = totalPower,
                     energyRatioPercent = ratio,
-                    isStillnessGated = bandPower == 0.0 && totalPower == 0.0
+                    isStillnessGated = bandPower == 0.0 && totalPower == 0.0,
+                    accelHistory = newHistory
                 )
             }
         }

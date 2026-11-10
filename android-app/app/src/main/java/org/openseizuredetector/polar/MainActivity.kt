@@ -13,6 +13,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -29,8 +30,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -291,6 +297,7 @@ fun DashboardView(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -377,26 +384,115 @@ fun DashboardView(
             }
         }
 
-        // Accel preview
+        // Accel preview & Live Waveform
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text(text = "Live Accelerometer Magnitude", style = MaterialTheme.typography.titleSmall)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "X: %+.2fg  Y: %+.2fg  Z: %+.2fg  |a|: %.2fg".format(
-                        telemetry.lastAccX,
-                        telemetry.lastAccY,
-                        telemetry.lastAccZ,
-                        telemetry.lastMagnitude
-                    ),
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 13.sp
-                )
-                Text(
-                    text = "Packet Latency: ${telemetry.lastPacketLatencyMs} ms",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
-                )
+                Text(text = "Live Accelerometer & Energy Over Time", style = MaterialTheme.typography.titleSmall)
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // XYZ Text metrics
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(text = "X: %+.2fg".format(telemetry.lastAccX), fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = Color(0xFFE53935))
+                    Text(text = "Y: %+.2fg".format(telemetry.lastAccY), fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = Color(0xFF43A047))
+                    Text(text = "Z: %+.2fg".format(telemetry.lastAccZ), fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = Color(0xFF1E88E5))
+                    Text(text = "|a|: %.2fg".format(telemetry.lastMagnitude), fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Real-time Canvas Graph for XYZ & Energy
+                val history = telemetry.accelHistory
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(120.dp)
+                        .background(Color(0xFF1E1E1E), shape = RoundedCornerShape(8.dp))
+                        .padding(8.dp)
+                ) {
+                    if (history.size > 2) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val w = size.width
+                            val h = size.height
+                            val midY = h / 2f
+                            val stepX = w / (history.size - 1).coerceAtLeast(1)
+
+                            // Center baseline (0g)
+                            drawLine(
+                                color = Color(0xFF424242),
+                                start = Offset(0f, midY),
+                                end = Offset(w, midY),
+                                strokeWidth = 1f
+                            )
+
+                            // Threshold line for seizure energy (50%)
+                            val threshY = h * (1f - 0.50f)
+                            drawLine(
+                                color = Color(0x66FF5252),
+                                start = Offset(0f, threshY),
+                                end = Offset(w, threshY),
+                                strokeWidth = 1f
+                            )
+
+                            val pathX = Path()
+                            val pathY = Path()
+                            val pathZ = Path()
+                            val pathEnergy = Path()
+
+                            fun scaleAcc(v: Float): Float = (midY - (v * (midY / 2.5f))).coerceIn(0f, h)
+                            fun scaleEnergy(ratioPct: Float): Float = (h - ((ratioPct / 100f) * h)).coerceIn(0f, h)
+
+                            history.forEachIndexed { i, pt ->
+                                val xPos = i * stepX
+                                if (i == 0) {
+                                    pathX.moveTo(xPos, scaleAcc(pt.x))
+                                    pathY.moveTo(xPos, scaleAcc(pt.y))
+                                    pathZ.moveTo(xPos, scaleAcc(pt.z))
+                                    pathEnergy.moveTo(xPos, scaleEnergy(pt.energyRatio))
+                                } else {
+                                    pathX.lineTo(xPos, scaleAcc(pt.x))
+                                    pathY.lineTo(xPos, scaleAcc(pt.y))
+                                    pathZ.lineTo(xPos, scaleAcc(pt.z))
+                                    pathEnergy.lineTo(xPos, scaleEnergy(pt.energyRatio))
+                                }
+                            }
+
+                            drawPath(pathX, color = Color(0xFFE53935), style = Stroke(width = 2f))
+                            drawPath(pathY, color = Color(0xFF43A047), style = Stroke(width = 2f))
+                            drawPath(pathZ, color = Color(0xFF1E88E5), style = Stroke(width = 2f))
+                            drawPath(pathEnergy, color = Color(0xFFFFD54F), style = Stroke(width = 3f))
+                        }
+                    } else {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = if (telemetry.isStreamingAcc) "Collecting waveform samples..." else "Connect sensor to stream waveform",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.Gray
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(text = "● X", color = Color(0xFFE53935), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(text = "● Y", color = Color(0xFF43A047), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(text = "● Z", color = Color(0xFF1E88E5), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(text = "● 3-8Hz Energy", color = Color(0xFFFFD54F), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Text(
+                        text = "Latency: ${telemetry.lastPacketLatencyMs} ms",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray,
+                        fontSize = 11.sp
+                    )
+                }
             }
         }
 

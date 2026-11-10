@@ -32,6 +32,7 @@ class PolarForegroundService : Service() {
 
     private var polarBleClient: PolarBleClient? = null
     private lateinit var watchdog: DeadmanWatchdog
+    private var lastReportedState: SeizureAlarmState? = null
 
     companion object {
         const val CHANNEL_ID = "polar_monitoring_channel"
@@ -59,16 +60,22 @@ class PolarForegroundService : Service() {
         }
 
         watchdog = DeadmanWatchdog { state ->
-            updateNotification("Status: $state")
+            if (state != lastReportedState) {
+                lastReportedState = state
+                updateNotification("Status: $state")
+            }
         }
 
         polarBleClient = PolarBleClient(this) { alarmState ->
             watchdog.feed()
-            when (alarmState) {
-                SeizureAlarmState.WARNING -> updateNotification("⚠️ WARNING: Rhythmic seizure motion detected")
-                SeizureAlarmState.ALARM -> updateNotification("🚨 ALARM: Prolonged seizure activity confirmed!")
-                SeizureAlarmState.DISCONNECTED -> updateNotification("Sensor disconnected")
-                SeizureAlarmState.NORMAL -> updateNotification("Monitoring active — Normal")
+            if (alarmState != lastReportedState) {
+                lastReportedState = alarmState
+                when (alarmState) {
+                    SeizureAlarmState.WARNING -> updateNotification("⚠️ WARNING: Rhythmic seizure motion detected")
+                    SeizureAlarmState.ALARM -> updateNotification("🚨 ALARM: Prolonged seizure activity confirmed!")
+                    SeizureAlarmState.DISCONNECTED -> updateNotification("Sensor disconnected")
+                    SeizureAlarmState.NORMAL -> updateNotification("Monitoring active — Normal")
+                }
             }
         }
     }
@@ -173,15 +180,21 @@ class PolarForegroundService : Service() {
             PendingIntent.FLAG_IMMUTABLE
         )
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(getString(R.string.service_notification_title))
+        val isAlarmActive = lastReportedState == SeizureAlarmState.ALARM || lastReportedState == SeizureAlarmState.WARNING
+
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle(if (isAlarmActive) "⚠️ Seizure Motion Detected" else getString(R.string.service_notification_title))
             .setContentText(statusText)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel Alarm", cancelPendingIntent)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .build()
+            .setPriority(if (isAlarmActive) NotificationCompat.PRIORITY_MAX else NotificationCompat.PRIORITY_LOW)
+
+        if (isAlarmActive) {
+            builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel Alarm", cancelPendingIntent)
+        }
+
+        return builder.build()
     }
 
     private fun updateNotification(statusText: String) {
@@ -194,10 +207,10 @@ class PolarForegroundService : Service() {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 getString(R.string.channel_monitoring_name),
-                NotificationManager.IMPORTANCE_HIGH
+                NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = getString(R.string.service_notification_desc)
-                enableVibration(true)
+                enableVibration(false)
             }
             val manager = getSystemService(NotificationManager::class.java)
             manager?.createNotificationChannel(channel)
