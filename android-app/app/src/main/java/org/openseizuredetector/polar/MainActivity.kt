@@ -36,6 +36,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -502,6 +503,118 @@ fun DashboardView(
                         Text(text = "● Z", color = Color(0xFF1E88E5), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         Text(text = "● 3-8Hz Energy", color = Color(0xFFFFD54F), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
+                    Text(
+                        text = "-30s ⟵ Now",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+        }
+
+        // Live Heart Rate Waveform (Synchronized 30-Second Rolling Window)
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(text = "Live Heart Rate (BPM)", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        text = if (telemetry.heartRateBpm != null) "${telemetry.heartRateBpm} BPM" else "No Data",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = Color(0xFFE91E63),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Real-time Canvas Graph for HR
+                val hrHistory = telemetry.hrHistory
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(110.dp)
+                        .background(Color(0xFF1E1E1E), shape = RoundedCornerShape(8.dp))
+                        .padding(8.dp)
+                ) {
+                    if (hrHistory.size >= 2) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val w = size.width
+                            val h = size.height
+
+                            // Grid lines matching the 30-second window
+                            val grid10s = w * (10f / 30f)
+                            val grid20s = w * (20f / 30f)
+                            drawLine(color = Color(0xFF2C2C2C), start = Offset(grid10s, 0f), end = Offset(grid10s, h), strokeWidth = 1f)
+                            drawLine(color = Color(0xFF2C2C2C), start = Offset(grid20s, 0f), end = Offset(grid20s, h), strokeWidth = 1f)
+
+                            // Normal resting HR reference lines: 60 BPM and 100 BPM
+                            // Dynamic scale between min(40, lowest) and max(140, highest)
+                            val minBpm = (hrHistory.minOf { it.bpm } - 10).coerceAtMost(50).toFloat()
+                            val maxBpm = (hrHistory.maxOf { it.bpm } + 10).coerceAtLeast(120).toFloat()
+                            val bpmRange = (maxBpm - minBpm).coerceAtLeast(20f)
+
+                            fun scaleBpm(bpm: Int): Float =
+                                (h - ((bpm - minBpm) / bpmRange) * h).coerceIn(0f, h)
+
+                            // Reference horizontal line for 100 BPM (tachycardia threshold)
+                            if (100f in minBpm..maxBpm) {
+                                val y100 = scaleBpm(100)
+                                drawLine(
+                                    color = Color(0xFF553333),
+                                    start = Offset(0f, y100),
+                                    end = Offset(w, y100),
+                                    strokeWidth = 1f,
+                                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f))
+                                )
+                            }
+
+                            // 30-second aligned time window
+                            val now = System.currentTimeMillis()
+                            val windowDurationMs = 30_000L
+
+                            val pathHr = Path()
+                            hrHistory.forEachIndexed { i, pt ->
+                                val timeAgoMs = (now - pt.timestamp).coerceAtLeast(0L)
+                                val xPos = (w - (timeAgoMs.toFloat() / windowDurationMs.toFloat()) * w).coerceIn(0f, w)
+                                val yPos = scaleBpm(pt.bpm)
+
+                                if (i == 0) {
+                                    pathHr.moveTo(xPos, yPos)
+                                } else {
+                                    pathHr.lineTo(xPos, yPos)
+                                }
+                            }
+
+                            drawPath(pathHr, color = Color(0xFFE91E63), style = Stroke(width = 2.5f))
+
+                            // Draw dot at latest sample
+                            val latest = hrHistory.last()
+                            val latestTimeAgoMs = (now - latest.timestamp).coerceAtLeast(0L)
+                            val latestX = (w - (latestTimeAgoMs.toFloat() / windowDurationMs.toFloat()) * w).coerceIn(0f, w)
+                            val latestY = scaleBpm(latest.bpm)
+                            drawCircle(color = Color(0xFFFF4081), radius = 4f, center = Offset(latestX, latestY))
+                        }
+                    } else {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = if (telemetry.isStreamingHr) "Collecting HR samples..." else "Wear sensor to stream heart rate",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.Gray
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(text = "♥ Heart Rate (BPM)", color = Color(0xFFE91E63), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     Text(
                         text = "-30s ⟵ Now",
                         style = MaterialTheme.typography.bodySmall,

@@ -38,6 +38,8 @@ class PolarBleClient(
         // Chart window: 30 seconds at 10 Hz sampling rate = 300 points
         private const val CHART_SAMPLE_INTERVAL_MS = 100L
         private const val CHART_MAX_POINTS = 300
+        // HR usually reports 1 Hz; keep up to 35 seconds of HR history (~35 points)
+        private const val HR_MAX_POINTS = 35
     }
 
     val api: PolarBleApi = PolarBleApiDefaultImpl.defaultImplementation(
@@ -444,11 +446,18 @@ class PolarBleClient(
         hrStreamDisposable = api.startHrStreaming(deviceId)
             .subscribe(
                 { hrData ->
+                    val now = System.currentTimeMillis()
                     for (sample in hrData.samples) {
-                        DiagnosticManager.updateTelemetry {
-                            it.copy(
+                        DiagnosticManager.updateTelemetry { current ->
+                            val updatedHrHistory = current.hrHistory.toMutableList()
+                            updatedHrHistory.add(HrHistoryPoint(timestamp = now, bpm = sample.hr))
+                            if (updatedHrHistory.size > HR_MAX_POINTS) {
+                                updatedHrHistory.removeAt(0)
+                            }
+                            current.copy(
                                 isStreamingHr = true,
-                                heartRateBpm = sample.hr
+                                heartRateBpm = sample.hr,
+                                hrHistory = updatedHrHistory
                             )
                         }
                     }
