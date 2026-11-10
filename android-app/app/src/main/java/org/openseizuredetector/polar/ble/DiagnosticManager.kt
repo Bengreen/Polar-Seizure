@@ -42,6 +42,7 @@ data class HrHistoryPoint(
 )
 
 data class LiveBleDiagnostics(
+    val isServiceRunning: Boolean = false,
     val connectionState: String = "DISCONNECTED",
     val connectedDeviceId: String? = null,
     val connectedDeviceName: String? = null,
