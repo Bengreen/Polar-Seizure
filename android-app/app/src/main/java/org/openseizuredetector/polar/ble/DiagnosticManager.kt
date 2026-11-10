@@ -50,6 +50,8 @@ data class LiveBleDiagnostics(
     val heartRateBpm: Int? = null,
     val isStreamingAcc: Boolean = false,
     val isStreamingHr: Boolean = false,
+    val isPpgDutyCycleActive: Boolean = false,
+    val isIncidentRecording: Boolean = false,
     val sampleRateHz: Double = 0.0,
     val lastPacketLatencyMs: Long = 0,
     val lastAccX: Double = 0.0,
