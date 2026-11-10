@@ -27,6 +27,15 @@ data class DiscoveredDevice(
     val isConnectable: Boolean
 )
 
+data class AccelHistoryPoint(
+    val timestamp: Long,
+    val x: Float,
+    val y: Float,
+    val z: Float,
+    val magnitude: Float,
+    val energyRatio: Float
+)
+
 data class LiveBleDiagnostics(
     val connectionState: String = "DISCONNECTED",
     val connectedDeviceId: String? = null,
@@ -44,7 +53,8 @@ data class LiveBleDiagnostics(
     val seizurePower3to8Hz: Double = 0.0,
     val totalPower: Double = 0.0,
     val energyRatioPercent: Double = 0.0,
-    val isStillnessGated: Boolean = true
+    val isStillnessGated: Boolean = true,
+    val accelHistory: List<AccelHistoryPoint> = emptyList()
 )
 
 object DiagnosticManager {
@@ -65,6 +75,12 @@ object DiagnosticManager {
             level = level,
             message = message
         )
+        when (level) {
+            LogLevel.INFO -> android.util.Log.i("PolarSeizure", message)
+            LogLevel.SUCCESS -> android.util.Log.i("PolarSeizure", "SUCCESS: $message")
+            LogLevel.WARN -> android.util.Log.w("PolarSeizure", message)
+            LogLevel.ERROR -> android.util.Log.e("PolarSeizure", message)
+        }
         // Keep up to 200 recent log messages
         val current = _logs.value.toMutableList()
         current.add(0, entry)
