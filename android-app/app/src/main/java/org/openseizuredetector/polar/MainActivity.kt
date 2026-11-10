@@ -339,10 +339,25 @@ fun DashboardView(
                     )
                 }
                 Text(
-                    text = "Streams: ACC: ${if (telemetry.isStreamingAcc) "ACTIVE" else "OFF"} | HR: ${if (telemetry.isStreamingHr) "ACTIVE" else "OFF"}",
+                    text = "Streams: ACC: ${if (telemetry.isStreamingAcc) "ACTIVE" else "OFF"} | HR: ${
+                        when {
+                            telemetry.isIncidentRecording -> "INCIDENT (CONTINUOUS)"
+                            telemetry.isStreamingHr -> "DUTY ACTIVE (15s)"
+                            telemetry.isPpgDutyCycleActive -> "DUTY SLEEP (SAVING)"
+                            else -> "OFF"
+                        }
+                    }",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
+                    color = if (telemetry.isIncidentRecording) Color(0xFFD32F2F) else Color.Gray
                 )
+                if (telemetry.isIncidentRecording) {
+                    Text(
+                        text = "● PRESERVING INCIDENT DATA TO DISK",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFD32F2F)
+                    )
+                }
             }
         }
 

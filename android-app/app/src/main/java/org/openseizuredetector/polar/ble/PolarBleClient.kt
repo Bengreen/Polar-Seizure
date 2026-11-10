@@ -12,6 +12,7 @@ import io.reactivex.rxjava3.disposables.Disposable
 import java.util.UUID
 import org.openseizuredetector.polar.dsp.OpticalPulseEngine
 import org.openseizuredetector.polar.dsp.SeizureFftEngine
+import org.openseizuredetector.polar.incident.IncidentDataRecorder
 import org.openseizuredetector.polar.model.SeizureAlarmState
 
 class PolarBleClient(
@@ -27,6 +28,7 @@ class PolarBleClient(
 
     private val fftEngine = SeizureFftEngine()
     private val pulseEngine = OpticalPulseEngine()
+    val incidentRecorder = IncidentDataRecorder(context)
     private var connectedDeviceId: String? = null
     private var lastPacketTimestamp: Long = 0
     private var packetCount: Long = 0
@@ -36,6 +38,41 @@ class PolarBleClient(
     private var isScanRetryScheduled: Boolean = false
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
 
+    // Adaptive Optical HR Duty Cycle & Escalation state
+    private var isPpgDutyCycleActive = false
+    private var isEscalatedForIncident = false
+    private var hasPpgCapability = false
+    private var lastEscalationTriggerTime: Long = 0
+
+    private val ppgDutyCycleRunnable = object : Runnable {
+        override fun run() {
+            val deviceId = connectedDeviceId
+            if (deviceId == null || !hasPpgCapability) return
+
+            if (isEscalatedForIncident) {
+                // If escalated, maintain continuous PPG sampling and re-check after duty window
+                handler.postDelayed(this, PPG_DUTY_ACTIVE_DURATION_MS)
+                return
+            }
+
+            if (isPpgDutyCycleActive) {
+                // Active sampling window finished -> stop PPG stream to let LEDs rest
+                DiagnosticManager.log(LogLevel.INFO, "PPG duty window complete. Stopping optical stream to preserve battery.")
+                stopPpgStreaming()
+                isPpgDutyCycleActive = false
+                DiagnosticManager.updateTelemetry { it.copy(isPpgDutyCycleActive = false, isStreamingHr = false) }
+                handler.postDelayed(this, PPG_DUTY_SLEEP_INTERVAL_MS)
+            } else {
+                // Resting interval complete -> start PPG sampling window
+                DiagnosticManager.log(LogLevel.INFO, "PPG duty cycle starting 15s optical sample window...")
+                isPpgDutyCycleActive = true
+                DiagnosticManager.updateTelemetry { it.copy(isPpgDutyCycleActive = true) }
+                startPpgStreaming(deviceId)
+                handler.postDelayed(this, PPG_DUTY_ACTIVE_DURATION_MS)
+            }
+        }
+    }
+
     companion object {
         private const val MIN_SCAN_INTERVAL_MS = 3000L
         private const val SCAN_RETRY_DELAY_MS = 5000L
@@ -44,6 +81,15 @@ class PolarBleClient(
         private const val CHART_MAX_POINTS = 300
         // HR usually reports 1 Hz; keep up to 35 seconds of HR history (~35 points)
         private const val HR_MAX_POINTS = 35
+
+        // Optical HR Duty Cycle: Active for 15s, then sleep for 120s (2 minutes)
+        private const val PPG_DUTY_ACTIVE_DURATION_MS = 15_000L
+        private const val PPG_DUTY_SLEEP_INTERVAL_MS = 120_000L
+        // Minimum hold time for incident escalation before reverting to duty-cycle
+        private const val INCIDENT_HOLD_DURATION_MS = 30_000L
+        // Movement threshold to trigger instant optical escalation (50% of alarm energy)
+        private const val ACC_SUSPECT_POWER_THRESHOLD = 0.025
+        private const val ACC_SUSPECT_MAGNITUDE_VARIANCE = 0.15
     }
 
     val api: PolarBleApi = PolarBleApiDefaultImpl.defaultImplementation(
@@ -125,6 +171,8 @@ class PolarBleClient(
                 stopHrStreaming()
                 stopPpiStreaming()
                 stopPpgStreaming()
+                stopPpgDutyCycle()
+                incidentRecorder.onIncidentDeescalated()
                 pulseEngine.reset()
                 DiagnosticManager.updateTelemetry {
                     it.copy(
@@ -134,7 +182,9 @@ class PolarBleClient(
                         batteryLevel = null,
                         heartRateBpm = null,
                         isStreamingAcc = false,
-                        isStreamingHr = false
+                        isStreamingHr = false,
+                        isPpgDutyCycleActive = false,
+                        isIncidentRecording = false
                     )
                 }
                 onAlarmStateChanged(SeizureAlarmState.DISCONNECTED)
@@ -278,6 +328,8 @@ class PolarBleClient(
         stopHrStreaming()
         stopPpiStreaming()
         stopPpgStreaming()
+        stopPpgDutyCycle()
+        incidentRecorder.onIncidentDeescalated()
         try {
             DiagnosticManager.log(LogLevel.INFO, "Calling api.disconnectFromDevice($deviceId)...")
             api.disconnectFromDevice(deviceId)
@@ -292,7 +344,9 @@ class PolarBleClient(
                         batteryLevel = null,
                         heartRateBpm = null,
                         isStreamingAcc = false,
-                        isStreamingHr = false
+                        isStreamingHr = false,
+                        isPpgDutyCycleActive = false,
+                        isIncidentRecording = false
                     )
                 }
             }
@@ -320,8 +374,9 @@ class PolarBleClient(
                     // For optical wrist devices like Polar Loop / Polar 360 in SDK Mode, PPI/HR streams are disallowed by device firmware.
                     // Prioritize raw optical PPG stream (22 Hz central green channels) to compute pulse rate on-phone.
                     if (availableTypes.contains(PolarBleApi.PolarDeviceDataType.PPG)) {
+                        hasPpgCapability = true
                         handler.postDelayed({
-                            startPpgStreaming(deviceId)
+                            startPpgDutyCycle(deviceId)
                         }, 2500L)
                     } else if (availableTypes.contains(PolarBleApi.PolarDeviceDataType.PPI)) {
                         handler.postDelayed({
@@ -428,9 +483,14 @@ class PolarBleClient(
             }
 
             val magnitude = Math.sqrt(gx * gx + gy * gy + gz * gz) - 1.0
+            incidentRecorder.recordAccel(now, gx.toFloat(), gy.toFloat(), gz.toFloat(), magnitude.toFloat())
+
             val bandPower = fftEngine.getLastBandPower()
             val totalPower = fftEngine.getLastTotalPower()
             val ratio = if (totalPower > 0.0) (bandPower / totalPower) * 100.0 else 0.0
+
+            // Check if acceleration indicates an incident or elevated movement to escalate optical HR
+            checkAndHandleIncidentEscalation(bandPower, totalPower, magnitude, analysis?.state)
 
             // Time-based chart sampling: record 1 point every 100ms for a true 30-second window (300 points)
             val shouldRecordChartPoint = (now - lastChartSampleTime) >= CHART_SAMPLE_INTERVAL_MS
@@ -565,6 +625,69 @@ class PolarBleClient(
         ppiStreamDisposable = null
     }
 
+    private fun checkAndHandleIncidentEscalation(
+        bandPower: Double,
+        totalPower: Double,
+        magnitude: Double,
+        state: SeizureAlarmState?
+    ) {
+        val now = System.currentTimeMillis()
+        val isSuspectMovement = bandPower >= ACC_SUSPECT_POWER_THRESHOLD ||
+                Math.abs(magnitude) >= ACC_SUSPECT_MAGNITUDE_VARIANCE ||
+                state == SeizureAlarmState.WARNING ||
+                state == SeizureAlarmState.ALARM
+
+        if (isSuspectMovement) {
+            lastEscalationTriggerTime = now
+            if (!isEscalatedForIncident) {
+                isEscalatedForIncident = true
+                val reason = when (state) {
+                    SeizureAlarmState.ALARM -> "Seizure ALARM"
+                    SeizureAlarmState.WARNING -> "Seizure WARNING"
+                    else -> "Elevated movement / Pre-warning power: ${"%.3f".format(bandPower)}"
+                }
+                incidentRecorder.onIncidentEscalationTriggered(reason)
+                DiagnosticManager.updateTelemetry { it.copy(isIncidentRecording = true) }
+
+                // Escalate optical PPG streaming immediately if device has PPG support
+                val deviceId = connectedDeviceId
+                if (deviceId != null && hasPpgCapability && ppgStreamDisposable == null) {
+                    DiagnosticManager.log(LogLevel.INFO, "Escalating optical PPG stream to continuous sampling for incident analysis...")
+                    startPpgStreaming(deviceId)
+                }
+            }
+        } else if (isEscalatedForIncident) {
+            // Check if cooldown period elapsed without further suspect movements
+            if (now - lastEscalationTriggerTime >= INCIDENT_HOLD_DURATION_MS) {
+                isEscalatedForIncident = false
+                DiagnosticManager.log(LogLevel.INFO, "Incident hold period ended. De-escalating and flushing forensic record.")
+                incidentRecorder.onIncidentDeescalated()
+                DiagnosticManager.updateTelemetry { it.copy(isIncidentRecording = false) }
+
+                // If currently outside an active duty-cycle window, stop PPG stream to resume battery savings
+                if (!isPpgDutyCycleActive) {
+                    stopPpgStreaming()
+                    DiagnosticManager.updateTelemetry { it.copy(isStreamingHr = false) }
+                }
+            }
+        }
+    }
+
+    private fun startPpgDutyCycle(deviceId: String) {
+        stopPpgDutyCycle()
+        DiagnosticManager.log(LogLevel.INFO, "Starting adaptive PPG duty cycle (15s active every 2 mins)...")
+        isPpgDutyCycleActive = true
+        DiagnosticManager.updateTelemetry { it.copy(isPpgDutyCycleActive = true) }
+        startPpgStreaming(deviceId)
+        handler.postDelayed(ppgDutyCycleRunnable, PPG_DUTY_ACTIVE_DURATION_MS)
+    }
+
+    private fun stopPpgDutyCycle() {
+        handler.removeCallbacks(ppgDutyCycleRunnable)
+        isPpgDutyCycleActive = false
+        isEscalatedForIncident = false
+    }
+
     private fun startPpgStreaming(deviceId: String) {
         stopPpgStreaming()
         DiagnosticManager.log(LogLevel.INFO, "Requesting PPG stream settings for $deviceId...")
@@ -604,10 +727,12 @@ class PolarBleClient(
         for (sample in ppgData.samples) {
             // Polar 360 / Loop streams 2 green optical photodiode channels
             val firstChannel = sample.channelSamples.firstOrNull()?.toLong() ?: continue
+            val secondChannel = sample.channelSamples.getOrNull(1)?.toLong() ?: firstChannel
             val bpm = pulseEngine.processSample(firstChannel, now)
             if (bpm != null) {
                 latestBpm = bpm
             }
+            incidentRecorder.recordPpg(now, firstChannel, secondChannel, bpm)
         }
 
         if (latestBpm != null && latestBpm > 0) {
@@ -656,6 +781,8 @@ class PolarBleClient(
         stopHrStreaming()
         stopPpiStreaming()
         stopPpgStreaming()
+        stopPpgDutyCycle()
+        incidentRecorder.onIncidentDeescalated()
         disposables.clear()
         api.shutDown()
         DiagnosticManager.log(LogLevel.INFO, "PolarBleClient shut down.")
