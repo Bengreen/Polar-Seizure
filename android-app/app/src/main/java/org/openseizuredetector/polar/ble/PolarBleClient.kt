@@ -66,6 +66,22 @@ class PolarBleClient(
                 )
             }
 
+            override fun hrNotificationReceived(identifier: String, sample: com.polar.sdk.api.model.PolarHrData.PolarHrSample) {
+                val now = System.currentTimeMillis()
+                DiagnosticManager.updateTelemetry { current ->
+                    val updatedHrHistory = current.hrHistory.toMutableList()
+                    updatedHrHistory.add(HrHistoryPoint(timestamp = now, bpm = sample.hr))
+                    if (updatedHrHistory.size > HR_MAX_POINTS) {
+                        updatedHrHistory.removeAt(0)
+                    }
+                    current.copy(
+                        isStreamingHr = true,
+                        heartRateBpm = sample.hr,
+                        hrHistory = updatedHrHistory
+                    )
+                }
+            }
+
             override fun deviceConnecting(polarDeviceInfo: PolarDeviceInfo) {
                 DiagnosticManager.log(
                     LogLevel.INFO,
@@ -306,21 +322,8 @@ class PolarBleClient(
 
     private fun startAccStreaming(deviceId: String) {
         stopAccStreaming()
-        DiagnosticManager.log(LogLevel.INFO, "Enabling SDK mode for $deviceId to configure ACC stream...")
-
-        val sdkModeDisposable = api.enableSDKMode(deviceId)
-            .onErrorComplete()
-            .subscribe(
-                {
-                    DiagnosticManager.log(LogLevel.INFO, "SDK mode enabled (or skipped). Requesting ACC stream settings for $deviceId...")
-                    requestAndStartAccStream(deviceId)
-                },
-                { error ->
-                    DiagnosticManager.log(LogLevel.WARN, "enableSDKMode error: ${error.localizedMessage}. Proceeding to request ACC settings directly...")
-                    requestAndStartAccStream(deviceId)
-                }
-            )
-        disposables.add(sdkModeDisposable)
+        DiagnosticManager.log(LogLevel.INFO, "Requesting ACC stream settings for $deviceId...")
+        requestAndStartAccStream(deviceId)
     }
 
     private fun requestAndStartAccStream(deviceId: String) {
