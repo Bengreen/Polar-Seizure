@@ -63,6 +63,8 @@ data class LiveBleDiagnostics(
     val totalPower: Double = 0.0,
     val energyRatioPercent: Double = 0.0,
     val isStillnessGated: Boolean = true,
+    val pendingEmergencyCountdownSeconds: Int? = null,
+    val pendingEmergencyType: String? = null,
     val accelHistory: List<AccelHistoryPoint> = emptyList(),
     val hrHistory: List<HrHistoryPoint> = emptyList()
 )

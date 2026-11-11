@@ -100,7 +100,8 @@ class MainActivity : ComponentActivity() {
                     onDisconnectDevice = { deviceId -> disconnectDevice(deviceId) },
                     onTriggerScan = { triggerScan() },
                     onTriggerTestAlert = { triggerTestAlert() },
-                    onTriggerPanic = { triggerPanicAlert() }
+                    onTriggerPanic = { triggerPanicAlert() },
+                    onCancelAlert = { cancelPendingAlert() }
                 )
             }
         }
@@ -164,6 +165,13 @@ class MainActivity : ComponentActivity() {
         }
         startService(intent)
     }
+
+    private fun cancelPendingAlert() {
+        val intent = Intent(this, PolarForegroundService::class.java).apply {
+            action = PolarForegroundService.ACTION_CANCEL_ALARM
+        }
+        startService(intent)
+    }
 }
 
 @Composable
@@ -174,7 +182,8 @@ fun MainScreen(
     onDisconnectDevice: (String) -> Unit,
     onTriggerScan: () -> Unit,
     onTriggerTestAlert: () -> Unit,
-    onTriggerPanic: () -> Unit
+    onTriggerPanic: () -> Unit,
+    onCancelAlert: () -> Unit
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -313,7 +322,8 @@ fun MainScreen(
                 when (page) {
                     0 -> DashboardView(
                         telemetry = telemetry,
-                        onTriggerPanic = onTriggerPanic
+                        onTriggerPanic = onTriggerPanic,
+                        onCancelAlert = onCancelAlert
                     )
                     1 -> CarerAlertsView(
                         onTriggerTestAlert = onTriggerTestAlert,
@@ -349,7 +359,8 @@ fun MainScreen(
 @Composable
 fun DashboardView(
     telemetry: LiveBleDiagnostics,
-    onTriggerPanic: () -> Unit
+    onTriggerPanic: () -> Unit,
+    onCancelAlert: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -358,6 +369,46 @@ fun DashboardView(
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        // Active Countdown Banner (15s abort window before SMS dispatch)
+        if (telemetry.pendingEmergencyCountdownSeconds != null) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFCDD2)),
+                border = androidx.compose.foundation.BorderStroke(2.dp, Color(0xFFD32F2F))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "🚨 ${telemetry.pendingEmergencyType?.uppercase() ?: "EMERGENCY"} DETECTED",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = Color(0xFFB71C1C)
+                    )
+                    Text(
+                        text = "Dispatching SMS to carers in ${telemetry.pendingEmergencyCountdownSeconds}s...",
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp,
+                        color = Color(0xFFB71C1C)
+                    )
+                    Button(
+                        onClick = onCancelAlert,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                    ) {
+                        Text("CANCEL / I AM OK", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+                }
+            }
+        }
+
         // Quick Panic Button
         Button(
             onClick = onTriggerPanic,
