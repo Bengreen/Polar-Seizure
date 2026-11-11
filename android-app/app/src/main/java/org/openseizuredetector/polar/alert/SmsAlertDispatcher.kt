@@ -107,10 +107,12 @@ class SmsAlertDispatcher(private val context: Context) {
             isTest -> "Polar-Seizure test report for $patientName"
             else -> "Polar-Seizure detected possible seizure for $patientName"
         }
-        val hrInfo = telemetry.heartRateBpm?.let { " HR: ${it}bpm." } ?: ""
-        val bandBatt = telemetry.batteryLevel?.let { " Band: ${it}%." } ?: ""
-        val phoneBatt = getPhoneBatteryLevel()?.let { " Phone: ${it}%." } ?: ""
-        val threshInfo = if (!isPanic) " Thresh: 3-8Hz (Ratio>=50%, Pwr>=0.05)." else ""
+        val hrValue = telemetry.heartRateBpm?.let { "${it}bpm" } ?: "N/A"
+        val hrInfo = " HR: $hrValue."
+
+        val ratioFormatted = "%.1f".format(telemetry.energyRatioPercent)
+        val powerFormatted = "%.3f".format(telemetry.seizurePower3to8Hz)
+        val threshInfo = " Thresh: 3-8Hz (Ratio>=50%, Pwr>=0.05 | Current: ${ratioFormatted}%, ${powerFormatted})."
 
         val locationInfo = if (position != null) {
             "\nLocation: ${position.toMapsUrl()} (±${position.accuracyMeters.toInt()}m)"
@@ -118,7 +120,7 @@ class SmsAlertDispatcher(private val context: Context) {
             "\nLocation: GPS acquiring / unavailable"
         }
 
-        val messageText = "$prefix$eventDesc at $timestamp.$hrInfo$bandBatt$phoneBatt$threshInfo$locationInfo"
+        val messageText = "$prefix$eventDesc at $timestamp.$hrInfo$threshInfo$locationInfo"
 
         var sentCount = 0
         for (carer in enabledContacts) {
