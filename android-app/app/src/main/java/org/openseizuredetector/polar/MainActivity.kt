@@ -8,11 +8,15 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.FileProvider
+import org.openseizuredetector.polar.incident.DailyArchiveFileInfo
+import org.openseizuredetector.polar.incident.DailyTelemetryLogger
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -462,6 +466,13 @@ fun DashboardView(
                                 strokeWidth = 1f
                             )
 
+                            // 30-second temporal alignment matching HR chart
+                            val now = System.currentTimeMillis()
+                            val windowDurationMs = 30_000L
+
+                            // Filter points within the last 30 seconds
+                            val visiblePoints = history.filter { (now - it.timestamp) in 0..windowDurationMs }
+
                             val pathX = Path()
                             val pathY = Path()
                             val pathZ = Path()
@@ -470,9 +481,14 @@ fun DashboardView(
                             fun scaleAcc(v: Float): Float = (midY - (v * (midY / 2.5f))).coerceIn(0f, h)
                             fun scaleEnergy(ratioPct: Float): Float = (h - ((ratioPct / 100f) * h)).coerceIn(0f, h)
 
-                            history.forEachIndexed { i, pt ->
-                                val xPos = (startOffsetIndex + i) * stepX
-                                if (i == 0) {
+                            visiblePoints.forEachIndexed { i, pt ->
+                                val timeAgoMs = (now - pt.timestamp).coerceAtLeast(0L)
+                                val xPos = (w - (timeAgoMs.toFloat() / windowDurationMs.toFloat()) * w).coerceIn(0f, w)
+
+                                val prevPt = visiblePoints.getOrNull(i - 1)
+                                val isGap = prevPt != null && (pt.timestamp - prevPt.timestamp) > 500L
+
+                                if (i == 0 || isGap) {
                                     pathX.moveTo(xPos, scaleAcc(pt.x))
                                     pathY.moveTo(xPos, scaleAcc(pt.y))
                                     pathZ.moveTo(xPos, scaleAcc(pt.z))
@@ -585,13 +601,20 @@ fun DashboardView(
                             val now = System.currentTimeMillis()
                             val windowDurationMs = 30_000L
 
+                            // Only render points within the last 30 seconds
+                            val visibleHrPoints = hrHistory.filter { (now - it.timestamp) in 0..windowDurationMs }
+
                             val pathHr = Path()
-                            hrHistory.forEachIndexed { i, pt ->
+                            visibleHrPoints.forEachIndexed { i, pt ->
                                 val timeAgoMs = (now - pt.timestamp).coerceAtLeast(0L)
                                 val xPos = (w - (timeAgoMs.toFloat() / windowDurationMs.toFloat()) * w).coerceIn(0f, w)
                                 val yPos = scaleBpm(pt.bpm)
 
-                                if (i == 0) {
+                                val prevPt = visibleHrPoints.getOrNull(i - 1)
+                                // If gap between HR samples exceeds 3.5s (e.g. duty cycle sleep interval), break line
+                                val isGap = prevPt != null && (pt.timestamp - prevPt.timestamp) > 3500L
+
+                                if (i == 0 || isGap) {
                                     pathHr.moveTo(xPos, yPos)
                                 } else {
                                     pathHr.lineTo(xPos, yPos)
@@ -600,12 +623,13 @@ fun DashboardView(
 
                             drawPath(pathHr, color = Color(0xFFE91E63), style = Stroke(width = 2.5f))
 
-                            // Draw dot at latest sample
-                            val latest = hrHistory.last()
-                            val latestTimeAgoMs = (now - latest.timestamp).coerceAtLeast(0L)
-                            val latestX = (w - (latestTimeAgoMs.toFloat() / windowDurationMs.toFloat()) * w).coerceIn(0f, w)
-                            val latestY = scaleBpm(latest.bpm)
-                            drawCircle(color = Color(0xFFFF4081), radius = 4f, center = Offset(latestX, latestY))
+                            // Draw dots for isolated points or pulse endpoints so disconnected samples remain clearly visible
+                            visibleHrPoints.forEach { pt ->
+                                val timeAgoMs = (now - pt.timestamp).coerceAtLeast(0L)
+                                val x = (w - (timeAgoMs.toFloat() / windowDurationMs.toFloat()) * w).coerceIn(0f, w)
+                                val y = scaleBpm(pt.bpm)
+                                drawCircle(color = Color(0xFFFF4081), radius = 3.5f, center = Offset(x, y))
+                            }
                         }
                     } else {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -835,6 +859,10 @@ fun DiagnosticsView(
     onCopyLogs: () -> Unit,
     onClearLogs: () -> Unit
 ) {
+    val context = LocalContext.current
+    val dailyLogger = remember { DailyTelemetryLogger(context) }
+    var archives by remember { mutableStateOf(dailyLogger.listAvailableArchives()) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -867,7 +895,93 @@ fun DiagnosticsView(
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Daily Telemetry Data Export Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Daily Telemetry Archives (.json.gz)",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    OutlinedButton(
+                        onClick = { archives = dailyLogger.listAvailableArchives() },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Text("Refresh", fontSize = 11.sp)
+                    }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+
+                if (archives.isEmpty()) {
+                    Text(
+                        text = "Recording continuous daily telemetry... Archives will appear here automatically (~12-18 MB/day compressed).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray,
+                        fontSize = 12.sp
+                    )
+                } else {
+                    archives.take(3).forEach { archive ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 3.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = archive.dateString,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                                val sizeKb = archive.sizeBytes / 1024
+                                val sizeStr = if (sizeKb > 1024) "%.1f MB".format(sizeKb / 1024f) else "$sizeKb KB"
+                                Text(
+                                    text = sizeStr,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.Gray,
+                                    fontSize = 11.sp
+                                )
+                            }
+                            Button(
+                                onClick = {
+                                    try {
+                                        val uri = FileProvider.getUriForFile(
+                                            context,
+                                            "${context.packageName}.fileprovider",
+                                            archive.file
+                                        )
+                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "application/gzip"
+                                            putExtra(Intent.EXTRA_STREAM, uri)
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        context.startActivity(Intent.createChooser(shareIntent, "Export Daily Telemetry Archive"))
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "Export error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Text("Download / Share", fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
 
         // Action Toolbar
         Row(

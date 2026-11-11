@@ -12,6 +12,7 @@ import io.reactivex.rxjava3.disposables.Disposable
 import java.util.UUID
 import org.openseizuredetector.polar.dsp.OpticalPulseEngine
 import org.openseizuredetector.polar.dsp.SeizureFftEngine
+import org.openseizuredetector.polar.incident.DailyTelemetryLogger
 import org.openseizuredetector.polar.incident.IncidentDataRecorder
 import org.openseizuredetector.polar.model.SeizureAlarmState
 
@@ -29,6 +30,7 @@ class PolarBleClient(
     private val fftEngine = SeizureFftEngine()
     private val pulseEngine = OpticalPulseEngine()
     val incidentRecorder = IncidentDataRecorder(context)
+    val dailyLogger = DailyTelemetryLogger(context)
     private var connectedDeviceId: String? = null
     private var lastPacketTimestamp: Long = 0
     private var packetCount: Long = 0
@@ -87,9 +89,10 @@ class PolarBleClient(
         private const val PPG_DUTY_SLEEP_INTERVAL_MS = 120_000L
         // Minimum hold time for incident escalation before reverting to duty-cycle
         private const val INCIDENT_HOLD_DURATION_MS = 30_000L
-        // Movement threshold to trigger instant optical escalation (50% of alarm energy)
-        private const val ACC_SUSPECT_POWER_THRESHOLD = 0.025
-        private const val ACC_SUSPECT_MAGNITUDE_VARIANCE = 0.15
+        // Pre-seizure spectral threshold: requires genuine 3-8 Hz energy concentration (30%+) and movement
+        // Full seizure alarm requires ratio >= 50% for 2+ windows; pre-seizure gate is set to 30%
+        private const val PRE_SEIZURE_MIN_POWER = 0.05
+        private const val PRE_SEIZURE_RATIO_PERCENT = 30.0
     }
 
     val api: PolarBleApi = PolarBleApiDefaultImpl.defaultImplementation(
@@ -484,13 +487,21 @@ class PolarBleClient(
 
             val magnitude = Math.sqrt(gx * gx + gy * gy + gz * gz) - 1.0
             incidentRecorder.recordAccel(now, gx.toFloat(), gy.toFloat(), gz.toFloat(), magnitude.toFloat())
+            dailyLogger.logAccel(now, gx.toFloat(), gy.toFloat(), gz.toFloat(), magnitude.toFloat())
 
             val bandPower = fftEngine.getLastBandPower()
             val totalPower = fftEngine.getLastTotalPower()
             val ratio = if (totalPower > 0.0) (bandPower / totalPower) * 100.0 else 0.0
 
-            // Check if acceleration indicates an incident or elevated movement to escalate optical HR
-            checkAndHandleIncidentEscalation(bandPower, totalPower, magnitude, analysis?.state)
+            if (analysis != null) {
+                val bpm = pulseEngine.getLastBpm().takeIf { it > 0 }
+                dailyLogger.logDsp(now, bpm, ratio.toFloat(), bandPower, totalPower, analysis.state.name)
+            }
+
+            // Evaluate incident escalation on FFT window analysis (or check cooldown)
+            if (analysis != null || isEscalatedForIncident) {
+                checkAndHandleIncidentEscalation(bandPower, totalPower, ratio, analysis?.state)
+            }
 
             // Time-based chart sampling: record 1 point every 100ms for a true 30-second window (300 points)
             val shouldRecordChartPoint = (now - lastChartSampleTime) >= CHART_SAMPLE_INTERVAL_MS
@@ -628,12 +639,14 @@ class PolarBleClient(
     private fun checkAndHandleIncidentEscalation(
         bandPower: Double,
         totalPower: Double,
-        magnitude: Double,
+        ratioPercent: Double,
         state: SeizureAlarmState?
     ) {
         val now = System.currentTimeMillis()
-        val isSuspectMovement = bandPower >= ACC_SUSPECT_POWER_THRESHOLD ||
-                Math.abs(magnitude) >= ACC_SUSPECT_MAGNITUDE_VARIANCE ||
+        // Pre-seizure condition: requires active movement power AND rhythmic clustering in 3-8 Hz (>=30%),
+        // or an active warning/alarm from consecutive windows.
+        val isPreSeizureRhythmic = totalPower >= PRE_SEIZURE_MIN_POWER && ratioPercent >= PRE_SEIZURE_RATIO_PERCENT
+        val isSuspectMovement = isPreSeizureRhythmic ||
                 state == SeizureAlarmState.WARNING ||
                 state == SeizureAlarmState.ALARM
 
@@ -644,7 +657,7 @@ class PolarBleClient(
                 val reason = when (state) {
                     SeizureAlarmState.ALARM -> "Seizure ALARM"
                     SeizureAlarmState.WARNING -> "Seizure WARNING"
-                    else -> "Elevated movement / Pre-warning power: ${"%.3f".format(bandPower)}"
+                    else -> "Pre-seizure spectral ratio: ${"%.1f".format(ratioPercent)}% (Power: ${"%.3f".format(bandPower)})"
                 }
                 incidentRecorder.onIncidentEscalationTriggered(reason)
                 DiagnosticManager.updateTelemetry { it.copy(isIncidentRecording = true) }
@@ -652,7 +665,7 @@ class PolarBleClient(
                 // Escalate optical PPG streaming immediately if device has PPG support
                 val deviceId = connectedDeviceId
                 if (deviceId != null && hasPpgCapability && ppgStreamDisposable == null) {
-                    DiagnosticManager.log(LogLevel.INFO, "Escalating optical PPG stream to continuous sampling for incident analysis...")
+                    DiagnosticManager.log(LogLevel.INFO, "Pre-seizure spectral energy detected ($reason). Escalating PPG to continuous stream...")
                     startPpgStreaming(deviceId)
                 }
             }
@@ -733,6 +746,7 @@ class PolarBleClient(
                 latestBpm = bpm
             }
             incidentRecorder.recordPpg(now, firstChannel, secondChannel, bpm)
+            dailyLogger.logPpg(now, firstChannel, secondChannel, bpm)
         }
 
         if (latestBpm != null && latestBpm > 0) {
@@ -783,6 +797,7 @@ class PolarBleClient(
         stopPpgStreaming()
         stopPpgDutyCycle()
         incidentRecorder.onIncidentDeescalated()
+        dailyLogger.closeCurrentWriter()
         disposables.clear()
         api.shutDown()
         DiagnosticManager.log(LogLevel.INFO, "PolarBleClient shut down.")
