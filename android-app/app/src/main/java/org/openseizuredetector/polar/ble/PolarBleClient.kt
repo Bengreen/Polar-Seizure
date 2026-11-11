@@ -46,6 +46,8 @@ class PolarBleClient(
     private var hasPpgCapability = false
     private var lastEscalationTriggerTime: Long = 0
     private var consecutivePreSeizureWindows = 0
+    private var dutyCycleStartTime: Long = 0
+    private var lastMovementTime: Long = 0
 
     private val ppgDutyCycleRunnable = object : Runnable {
         override fun run() {
@@ -58,6 +60,8 @@ class PolarBleClient(
                 return
             }
 
+            val now = System.currentTimeMillis()
+
             if (isPpgDutyCycleActive) {
                 // Active sampling window finished -> stop PPG stream to let LEDs rest
                 DiagnosticManager.log(LogLevel.INFO, "PPG duty window complete. Stopping optical stream to preserve battery.")
@@ -66,9 +70,20 @@ class PolarBleClient(
                 DiagnosticManager.updateTelemetry { it.copy(isPpgDutyCycleActive = false, isStreamingHr = false) }
                 handler.postDelayed(this, PPG_DUTY_SLEEP_INTERVAL_MS)
             } else {
-                // Resting interval complete -> start PPG sampling window
-                DiagnosticManager.log(LogLevel.INFO, "PPG duty cycle starting 15s optical sample window...")
+                // Resting interval complete. Check stillness gate:
+                // If patient has been quietly resting / sleeping with no movement for > 10 minutes,
+                // skip optical LED activation for this cycle to save battery.
+                val timeSinceMovement = now - lastMovementTime
+                if (lastMovementTime > 0 && timeSinceMovement >= STILLNESS_SKIP_INTERVAL_MS) {
+                    DiagnosticManager.log(LogLevel.INFO, "Patient resting quietly for ${timeSinceMovement / 60000}m. Skipping routine PPG duty cycle to conserve battery.")
+                    handler.postDelayed(this, PPG_DUTY_SLEEP_INTERVAL_MS)
+                    return
+                }
+
+                // Start PPG sampling window
+                DiagnosticManager.log(LogLevel.INFO, "PPG duty cycle starting optical sample window (auto-stops once pulse locks)...")
                 isPpgDutyCycleActive = true
+                dutyCycleStartTime = now
                 DiagnosticManager.updateTelemetry { it.copy(isPpgDutyCycleActive = true) }
                 startPpgStreaming(deviceId)
                 handler.postDelayed(this, PPG_DUTY_ACTIVE_DURATION_MS)
@@ -85,9 +100,13 @@ class PolarBleClient(
         // HR usually reports 1 Hz; keep up to 35 seconds of HR history (~35 points)
         private const val HR_MAX_POINTS = 35
 
-        // Optical HR Duty Cycle: Active for 15s, then sleep for 180s (3 minutes)
-        private const val PPG_DUTY_ACTIVE_DURATION_MS = 15_000L
-        private const val PPG_DUTY_SLEEP_INTERVAL_MS = 180_000L
+        // Optical HR Duty Cycle: Active for up to 12s, then sleep for 300s (5 minutes)
+        private const val PPG_DUTY_ACTIVE_DURATION_MS = 12_000L
+        private const val PPG_DUTY_SLEEP_INTERVAL_MS = 300_000L
+        // Minimum active time before early shutoff on pulse lock
+        private const val PPG_MIN_LOCK_SAMPLE_MS = 5_000L
+        // Stillness skip threshold: if resting with no movement for 10 min, skip routine PPG cycle
+        private const val STILLNESS_SKIP_INTERVAL_MS = 600_000L
         // Hold time for incident escalation before reverting to duty-cycle
         private const val INCIDENT_HOLD_DURATION_MS = 25_000L
         // Seizure-level spectral threshold: requires genuine sustained rhythmic energy in 3-8 Hz band
@@ -216,8 +235,8 @@ class PolarBleClient(
             }
 
             override fun batteryLevelReceived(identifier: String, level: Int) {
-                // Polar Loop with 25 Hz ACC and duty-cycled PPG (15s on / 180s off) achieves ~36 hours from 100%.
-                val estimatedHours = (level / 100.0) * 36.0
+                // Polar Loop with 25 Hz ACC, early pulse lock (~5-8s), and 5-min duty cycling achieves ~60+ hours (2.5+ days) from 100%.
+                val estimatedHours = (level / 100.0) * 60.0
                 DiagnosticManager.log(
                     LogLevel.INFO,
                     "Battery level received for $identifier: $level% (~${"%.1f".format(estimatedHours)}h remaining)"
@@ -501,6 +520,10 @@ class PolarBleClient(
             val totalPower = fftEngine.getLastTotalPower()
             val ratio = if (totalPower > 0.0) (bandPower / totalPower) * 100.0 else 0.0
 
+            if (totalPower > 0.02) {
+                lastMovementTime = now
+            }
+
             if (analysis != null) {
                 val bpm = pulseEngine.getLastBpm().takeIf { it > 0 }
                 dailyLogger.logDsp(now, bpm, ratio.toFloat(), bandPower, totalPower, analysis.state.name)
@@ -779,6 +802,24 @@ class PolarBleClient(
                     heartRateBpm = latestBpm,
                     hrHistory = updatedHrHistory
                 )
+            }
+
+            // Early pulse lock deactivation:
+            // If in routine duty cycle (not in an active emergency incident) and pulse lock is achieved
+            // after the minimum required sampling duration (5s), shut off optical LEDs early to save battery.
+            if (isPpgDutyCycleActive && !isEscalatedForIncident && pulseEngine.isPulseLocked()) {
+                val activeElapsed = now - dutyCycleStartTime
+                if (activeElapsed >= PPG_MIN_LOCK_SAMPLE_MS) {
+                    DiagnosticManager.log(
+                        LogLevel.INFO,
+                        "Pulse locked at $latestBpm BPM after ${activeElapsed / 1000}s. Shutting off optical LEDs early to conserve battery."
+                    )
+                    handler.removeCallbacks(ppgDutyCycleRunnable)
+                    stopPpgStreaming()
+                    isPpgDutyCycleActive = false
+                    DiagnosticManager.updateTelemetry { it.copy(isPpgDutyCycleActive = false, isStreamingHr = false) }
+                    handler.postDelayed(ppgDutyCycleRunnable, PPG_DUTY_SLEEP_INTERVAL_MS)
+                }
             }
         }
     }

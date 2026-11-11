@@ -351,7 +351,7 @@ fun DashboardView(
                     )
                     if (telemetry.batteryLevel != null) {
                         val estHours = telemetry.batteryRemainingHoursEstimate
-                            ?: ((telemetry.batteryLevel / 100.0) * 36.0)
+                            ?: ((telemetry.batteryLevel / 100.0) * 60.0)
                         val estString = if (estHours >= 24.0) {
                             val days = estHours / 24.0
                             "~%.1fd".format(days)
