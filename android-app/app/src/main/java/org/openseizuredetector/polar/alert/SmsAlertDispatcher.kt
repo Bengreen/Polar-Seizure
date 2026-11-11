@@ -26,15 +26,24 @@ class SmsAlertDispatcher(private val context: Context) {
 
     private fun getSmsManager(): SmsManager? {
         return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val sm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 context.getSystemService(SmsManager::class.java)
             } else {
                 @Suppress("DEPRECATION")
                 SmsManager.getDefault()
             }
+            sm ?: run {
+                @Suppress("DEPRECATION")
+                SmsManager.getDefault()
+            }
         } catch (e: Exception) {
             DiagnosticManager.log(LogLevel.ERROR, "Failed to obtain SmsManager: ${e.localizedMessage}")
-            null
+            try {
+                @Suppress("DEPRECATION")
+                SmsManager.getDefault()
+            } catch (fallbackError: Exception) {
+                null
+            }
         }
     }
 
