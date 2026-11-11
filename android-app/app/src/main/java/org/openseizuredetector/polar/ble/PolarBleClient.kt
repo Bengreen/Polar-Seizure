@@ -45,6 +45,7 @@ class PolarBleClient(
     private var isEscalatedForIncident = false
     private var hasPpgCapability = false
     private var lastEscalationTriggerTime: Long = 0
+    private var consecutivePreSeizureWindows = 0
 
     private val ppgDutyCycleRunnable = object : Runnable {
         override fun run() {
@@ -84,15 +85,17 @@ class PolarBleClient(
         // HR usually reports 1 Hz; keep up to 35 seconds of HR history (~35 points)
         private const val HR_MAX_POINTS = 35
 
-        // Optical HR Duty Cycle: Active for 15s, then sleep for 120s (2 minutes)
+        // Optical HR Duty Cycle: Active for 15s, then sleep for 180s (3 minutes)
         private const val PPG_DUTY_ACTIVE_DURATION_MS = 15_000L
-        private const val PPG_DUTY_SLEEP_INTERVAL_MS = 120_000L
-        // Minimum hold time for incident escalation before reverting to duty-cycle
-        private const val INCIDENT_HOLD_DURATION_MS = 30_000L
-        // Pre-seizure spectral threshold: requires genuine 3-8 Hz energy concentration (30%+) and movement
-        // Full seizure alarm requires ratio >= 50% for 2+ windows; pre-seizure gate is set to 30%
-        private const val PRE_SEIZURE_MIN_POWER = 0.05
-        private const val PRE_SEIZURE_RATIO_PERCENT = 30.0
+        private const val PPG_DUTY_SLEEP_INTERVAL_MS = 180_000L
+        // Hold time for incident escalation before reverting to duty-cycle
+        private const val INCIDENT_HOLD_DURATION_MS = 25_000L
+        // Seizure-level spectral threshold: requires genuine sustained rhythmic energy in 3-8 Hz band
+        // Full seizure alarm requires ratio >= 50% for 2+ windows (Power >= 0.05).
+        // Incident escalation requires ratio >= 45% sustained for 2 consecutive windows (or active WARNING/ALARM).
+        private const val SEIZURE_MIN_POWER = 0.10
+        private const val SEIZURE_RATIO_PERCENT = 45.0
+        private const val REQUIRED_CONSECUTIVE_WINDOWS = 2
     }
 
     val api: PolarBleApi = PolarBleApiDefaultImpl.defaultImplementation(
@@ -643,10 +646,15 @@ class PolarBleClient(
         state: SeizureAlarmState?
     ) {
         val now = System.currentTimeMillis()
-        // Pre-seizure condition: requires active movement power AND rhythmic clustering in 3-8 Hz (>=30%),
-        // or an active warning/alarm from consecutive windows.
-        val isPreSeizureRhythmic = totalPower >= PRE_SEIZURE_MIN_POWER && ratioPercent >= PRE_SEIZURE_RATIO_PERCENT
-        val isSuspectMovement = isPreSeizureRhythmic ||
+        // Strict seizure-level condition: requires real movement power and high concentration in 3-8 Hz
+        val isSustainedRhythmic = totalPower >= SEIZURE_MIN_POWER && ratioPercent >= SEIZURE_RATIO_PERCENT
+        if (isSustainedRhythmic) {
+            consecutivePreSeizureWindows++
+        } else if (state != SeizureAlarmState.WARNING && state != SeizureAlarmState.ALARM) {
+            consecutivePreSeizureWindows = 0
+        }
+
+        val isSuspectMovement = consecutivePreSeizureWindows >= REQUIRED_CONSECUTIVE_WINDOWS ||
                 state == SeizureAlarmState.WARNING ||
                 state == SeizureAlarmState.ALARM
 
@@ -657,7 +665,7 @@ class PolarBleClient(
                 val reason = when (state) {
                     SeizureAlarmState.ALARM -> "Seizure ALARM"
                     SeizureAlarmState.WARNING -> "Seizure WARNING"
-                    else -> "Pre-seizure spectral ratio: ${"%.1f".format(ratioPercent)}% (Power: ${"%.3f".format(bandPower)})"
+                    else -> "Sustained 3-8 Hz seizure rhythm: ${"%.1f".format(ratioPercent)}% (Power: ${"%.3f".format(bandPower)})"
                 }
                 incidentRecorder.onIncidentEscalationTriggered(reason)
                 DiagnosticManager.updateTelemetry { it.copy(isIncidentRecording = true) }
@@ -665,7 +673,7 @@ class PolarBleClient(
                 // Escalate optical PPG streaming immediately if device has PPG support
                 val deviceId = connectedDeviceId
                 if (deviceId != null && hasPpgCapability && ppgStreamDisposable == null) {
-                    DiagnosticManager.log(LogLevel.INFO, "Pre-seizure spectral energy detected ($reason). Escalating PPG to continuous stream...")
+                    DiagnosticManager.log(LogLevel.INFO, "Sustained seizure spectral energy detected ($reason). Escalating PPG to continuous stream...")
                     startPpgStreaming(deviceId)
                 }
             }
@@ -673,6 +681,7 @@ class PolarBleClient(
             // Check if cooldown period elapsed without further suspect movements
             if (now - lastEscalationTriggerTime >= INCIDENT_HOLD_DURATION_MS) {
                 isEscalatedForIncident = false
+                consecutivePreSeizureWindows = 0
                 DiagnosticManager.log(LogLevel.INFO, "Incident hold period ended. De-escalating and flushing forensic record.")
                 incidentRecorder.onIncidentDeescalated()
                 DiagnosticManager.updateTelemetry { it.copy(isIncidentRecording = false) }

@@ -486,7 +486,9 @@ fun DashboardView(
                                 val xPos = (w - (timeAgoMs.toFloat() / windowDurationMs.toFloat()) * w).coerceIn(0f, w)
 
                                 val prevPt = visiblePoints.getOrNull(i - 1)
-                                val isGap = prevPt != null && (pt.timestamp - prevPt.timestamp) > 500L
+                                // Only break lines if there is a genuine multi-second telemetry drop (> 2000ms),
+                                // not normal inter-packet jitter or minor delay.
+                                val isGap = prevPt != null && (pt.timestamp - prevPt.timestamp) > 2000L
 
                                 if (i == 0 || isGap) {
                                     pathX.moveTo(xPos, scaleAcc(pt.x))
