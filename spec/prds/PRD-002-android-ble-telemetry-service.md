@@ -138,3 +138,22 @@ To protect patient safety in Phase 1 without requiring an active cloud backend o
 ## 5. Offline Telemetry Cache
 * In the event of cellular or Wi-Fi disconnection, all telemetry frames, FFT power metrics, and warning states are buffered locally in an on-device SQLite / Room database.
 * When future Phase 2 backend integration is activated, buffered frames synchronize with `backend-container` with original device timestamps preserved.
+
+---
+
+## 6. Candidate Feature Enhancements [Tentative for Discussion]
+
+### 6.1 In-App Daily Archive Browser & System Share Sheet (Tentative for Discussion)
+* **Rationale:** The foreground daemon produces continuous compressed telemetry archives (`ps_telemetry_YYYY-MM-DD.json.gz`). Users and clinicians currently have to pull these manually via ADB.
+* **Requirements:**
+  1. **Archive Browser Tab / Screen:** A dedicated UI screen listing all locally stored daily `.json.gz` archives with file size, recording duration, and incident count flags.
+  2. **Daily Inspection View:** Tap an archive date to view quick summary statistics (total hours worn, mean resting HR, peak 3–8 Hz motion events, incident triggers).
+  3. **Android System Share Sheet Integration:** One-tap export via `FileProvider` allowing direct sharing of compressed `.json.gz` archives or summarized summaries to email (neurologist/GP), Google Drive, cloud backup, or local file manager.
+  4. **Retention Management:** Configurable storage quotas (e.g. keep last 7, 14, or 30 days) with automatic pruning of oldest non-incident logs when disk space is constrained.
+
+### 6.2 Silent BLE Keep-Alive & Radio Soft-Reset (Tentative for Discussion)
+* **Rationale:** Android Bluetooth daemons can occasionally hang or fail to surface incoming BLE packets after hours of continuous streaming, especially across radio sleep transitions.
+* **Requirements:**
+  1. **Telemetry Stream Health Watcher:** If no valid BLE packet (ACC or HR/PPG) arrives within 25 seconds during an active monitoring session, trigger an internal radio health probe.
+  2. **GATT Reconnect Cycle:** Attempt graceful `gatt.disconnect()` and `gatt.close()` followed by targeted re-connection to the saved device ID.
+  3. **Bluetooth Adapter Soft-Cycle (Fail-Closed):** If the connection remains unresponsive after 2 retry loops, prompt the user or toggle Bluetooth adapter state (subject to Android OS permission constraints) while logging the anomaly in diagnostics.

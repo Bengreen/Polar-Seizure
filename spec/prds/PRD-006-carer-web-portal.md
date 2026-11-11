@@ -40,3 +40,15 @@ When activated in Phase 2, the `frontend-container` provides a modern, responsiv
 ### 2.4 Incident History & Clinician Export
 * Historical log of warning events, confirmed seizures, and dead man's watchdog triggers.
 * One-click PDF / CSV export containing acceleration logs and FFT spectrum data for neurological review.
+
+---
+
+## 3. Candidate Clinical & Carer Portal Enhancements [Tentative for Discussion]
+
+### 3.1 1-Page Clinician Neurological Summary PDF (Tentative for Discussion)
+* **Objective:** Provide epileptologists and neurologists with a clean, standardized 1-page report for clinical consultations.
+* **Content Specification:**
+  1. **Compliance & Adherence:** Total hours worn per 24-hour cycle, split into daytime vs. nocturnal sleep epochs.
+  2. **Autonomic Vitals:** Resting baseline heart rate curve, circadian dipping patterns, and recorded tachycardic/bradycardic excursions.
+  3. **Event Timeline & Spectral Signatures:** Summary table and small spectrogram thumbnails of detected Warning and Alarm epochs (showing 3–8 Hz power and spectral ratio at onset).
+  4. **Wearer Log & False Alarm Interventions:** List of events cancelled by the wearer, providing clinical context on daily triggers.

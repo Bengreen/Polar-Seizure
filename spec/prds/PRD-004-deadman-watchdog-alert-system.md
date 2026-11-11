@@ -119,3 +119,36 @@ To avoid alarming caregivers unnecessarily and prevent cellular carrier rate-lim
 * **Mandatory 15-Second Local Abort Window:** Outgoing SMS messages are held in a pending state during the initial 15-second siren countdown. If the wearer touches `"Cancel / I Am OK"`, all outbound SMS messages are cancelled immediately.
 * **GPS Cooldown & Rate Limiting:** A hardware cooldown timer (default: 5 minutes) prevents repetitive SMS storming if repeated transient warnings occur in close succession.
 * **Delivery Logging:** Each SMS transmission outcome (`RESULT_OK`, `RESULT_ERROR_GENERIC_FAILURE`, `RESULT_ERROR_NO_SERVICE`) is logged to local Room database for clinical audit.
+
+---
+
+## 6. Candidate Emergency Alerting & False-Alarm Reduction Enhancements [Tentative for Discussion]
+
+### 6.1 Wearer Pre-Alarm Grace Window & Haptic Abort (Tentative for Discussion)
+* **Problem:** In everyday life, benign activities (brushing teeth with electric brush, scrubbing surfaces, gaming, chopping vegetables) can briefly enter the warning state. Immediate alarms cause wearer distress and carer fatigue.
+* **Requirements:**
+  1. **Visual & Haptic Warning Phase:** When motion reaches Warning / pre-Alarm status, trigger a **10–15 second countdown** on the phone screen with prominent amber/red pulsing visuals and distinctive haptic vibrations.
+  2. **One-Tap / Motion Abort:**
+     * Prominent on-screen button: **"I Am OK / Cancel Alert"**.
+     * Optional physical abort: Tap phone volume rocker twice or perform a deliberate wrist shake gesture.
+  3. **Event Logging:** Aborted events are marked as `CANCELLED_BY_WEARER` in daily telemetry logs for clinician review without dispatching SMS or calling carers.
+
+### 6.2 Activity Snooze / Temporary Inactive Profiles (Tentative for Discussion)
+* **Problem:** Wearers engaged in known high-vibration activities need a simple way to temporarily suspend monitoring without having to force-stop or disconnect the wearable.
+* **Requirements:**
+  1. Quick preset buttons on Dashboard and Notification: **"Snooze 15m"**, **"Snooze 30m"**, **"Snooze 1h"**.
+  2. Status bar persistent notification displays amber indicator with countdown timer (*"Monitoring Snoozed: 14 mins remaining"*).
+  3. Auto-resumes monitoring automatically upon expiration with an audible chime and notification prompt: *"Monitoring resumed"*.
+
+### 6.3 Bidirectional Carer Acknowledgment Feedback (Tentative for Discussion)
+* **Problem:** During an emergency, wearers who regain consciousness experience severe anxiety not knowing whether help was dispatched or received.
+* **Requirements:**
+  1. When a carer responds to an SMS (e.g. replying "ACK" or tapping a web portal link), the status is relayed back to the phone.
+  2. Android app displays a prominent confirmation screen: **"Carer Notified & Confirmed Assistance at 14:05"**.
+
+### 6.4 Low-Battery Carer Escalation (Tentative for Discussion)
+* **Problem:** If a wearable sensor or phone discharges silently during sleep, the individual is left completely unprotected throughout the night.
+* **Requirements:**
+  1. **Wristband Battery Threshold:** If Polar Loop Gen2 battery drops below $\le 15\%$ during active monitoring, trigger a distinct audio prompt on phone and dispatch a non-emergency alert to carers:
+     > *"BATTERY WARNING: [Patient Name]'s Polar Loop battery is at 12%. Please charge device to maintain overnight monitoring."*
+  2. **Phone Battery Threshold:** If host Android smartphone battery drops below $\le 10\%$, alert carers similarly.

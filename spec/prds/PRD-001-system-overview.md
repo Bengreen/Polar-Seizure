@@ -94,3 +94,22 @@ The system mirrors the proven, clinically validated algorithmic principles of th
 * **Smartphone Battery Consumption:** $\le 3.5\%$ battery drain per hour on Android device during continuous monitoring via stillness-gated FFT processing.
 * **Fail-Safe Integrity (Dead Man's Handle):** System fails closed. If sensor data stops arriving unexpectedly during an active session, local alerting commences within 15–30 seconds.
 * **Phased Independence:** Phase 1 Android detection operates 100% autonomously without requiring internet access or backend availability.
+
+---
+
+## 5. Candidate Feature Enhancements Matrix [Tentative for Discussion]
+
+The following candidate options represent architectural, algorithmic, and operational opportunities identified during ongoing field trials and pairing sessions. They are cataloged here as tentative options for user and clinical review prior to production implementation:
+
+| Category | Candidate Feature | Target Document | Summary Description |
+|---|---|---|---|
+| **False-Alarm & Usability** | **Wearer Pre-Alarm Grace Screen & Haptic Abort** | [PRD-004](PRD-004-deadman-watchdog-alert-system.md#51-wearer-pre-alarm-grace-window--haptic-abort-tentative-for-discussion) | 10–15 second full-screen countdown with distinct vibration patterns and one-tap abort before dispatching emergency SMS/carer alerts. |
+| **False-Alarm & Usability** | **Activity Snooze / Temporary Inactive Profiles** | [PRD-004](PRD-004-deadman-watchdog-alert-system.md#52-activity-snooze--temporary-inactive-profiles-tentative-for-discussion) | Quick 15m/30m/60m pause presets with auto-resume for high-vibration voluntary activities (electric toothbrushes, sports, rough transit). |
+| **Reporting & Review** | **In-App Daily Archive Browser & System Share Sheet** | [PRD-002](PRD-002-android-ble-telemetry-service.md#61-in-app-daily-archive-browser--system-share-sheet-tentative-for-discussion) | On-device UI to browse past `.json.gz` daily archives, inspect incident epochs, and share raw or summarized logs via Android Share Sheet. |
+| **Reporting & Review** | **1-Page Clinician Neurological Summary PDF** | [PRD-006](PRD-006-carer-web-portal.md#4-candidate-enhancements-matrix-tentative-for-discussion) | Automated one-page clinical summary visualizing daytime vs nocturnal movement, resting HR baseline, tachycardic spikes, and seizure warnings. |
+| **Emergency Alerting** | **Bidirectional Carer Acknowledgment Feedback** | [PRD-004](PRD-004-deadman-watchdog-alert-system.md#53-bidirectional-carer-acknowledgment-feedback-tentative-for-discussion) | Returns SMS / push delivery confirmation to the wearer's screen (*"Carer notified & acknowledged at 14:02"*). |
+| **Emergency Alerting** | **Low-Battery Carer Escalation** | [PRD-004](PRD-004-deadman-watchdog-alert-system.md#54-low-battery-carer-escalation-tentative-for-discussion) | Escalates alert to carers when wristband drops below $\le 15\%$ or phone drops below $\le 10\%$, preventing unmonitored night-time depletion. |
+| **Sensory & DSP** | **Nocturnal Detection Mode (Circadian Auto-Sensitivity)** | [PRD-003](PRD-003-seizure-detection-dsp-engine.md#71-nocturnal-detection-mode-circadian-auto-sensitivity-tentative-for-discussion) | Automatically lowers $\text{AlarmThresh}$ and tightens HR acceleration gating during scheduled sleep hours where voluntary motion is minimal. |
+| **Sensory & DSP** | **High-G Fall Detection (Impact + Inactivity)** | [PRD-003](PRD-003-seizure-detection-dsp-engine.md#72-high-g-fall-detection-impact--inactivity-tentative-for-discussion) | Detects severe $>3\text{–}4g$ kinetic impact followed immediately by prolonged motionless flaccidity ($>10\text{s}$) to flag atonic/drop seizures. |
+| **Sensory & DSP** | **Optical Off-Wrist / Detached Classification** | [PRD-003](PRD-003-seizure-detection-dsp-engine.md#73-optical-off-wrist--detached-classification-tentative-for-discussion) | Distinguishes between device detachment (PPG DC reflection drops to zero + flat ACC variance) and telemetry failure/dead man's timeout. |
+| **Reliability** | **Silent BLE Keep-Alive & Radio Soft-Reset** | [PRD-002](PRD-002-android-ble-telemetry-service.md#62-silent-ble-keep-alive--radio-soft-reset-tentative-for-discussion) | Tracks RSSI health and performs an internal BLE radio/adapter soft-cycle if Android BT daemon drops packets for $>30\text{s}$. |
