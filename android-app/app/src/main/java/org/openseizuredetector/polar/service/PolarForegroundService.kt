@@ -53,6 +53,7 @@ class PolarForegroundService : Service() {
         const val ACTION_START_SCAN = "ACTION_START_SCAN"
         const val ACTION_STOP_SCAN = "ACTION_STOP_SCAN"
         const val ACTION_TEST_SMS_ALERT = "ACTION_TEST_SMS_ALERT"
+        const val ACTION_PANIC_ALERT = "ACTION_PANIC_ALERT"
         const val EXTRA_DEVICE_ID = "EXTRA_DEVICE_ID"
         private const val SMS_COOLDOWN_MS = 60_000L // Prevent SMS storming (1 min cooldown between alarms)
     }
@@ -77,9 +78,9 @@ class PolarForegroundService : Service() {
         }
     }
 
-    private fun triggerEmergencyAlert(isTest: Boolean = false) {
+    private fun triggerEmergencyAlert(isTest: Boolean = false, isPanic: Boolean = false) {
         val now = System.currentTimeMillis()
-        if (!isTest && (now - lastSmsDispatchTimeMs) < SMS_COOLDOWN_MS) {
+        if (!isTest && !isPanic && (now - lastSmsDispatchTimeMs) < SMS_COOLDOWN_MS) {
             DiagnosticManager.log(LogLevel.WARN, "Alert SMS throttled (cooldown active).")
             return
         }
@@ -87,7 +88,8 @@ class PolarForegroundService : Service() {
             lastSmsDispatchTimeMs = now
         }
 
-        DiagnosticManager.log(LogLevel.INFO, "Initiating emergency dispatch (locating + SMS)...")
+        val eventLabel = if (isPanic) "PANIC" else if (isTest) "TEST" else "SEIZURE ALARM"
+        DiagnosticManager.log(LogLevel.INFO, "Initiating $eventLabel emergency dispatch (locating + SMS)...")
         val contacts = carerManager.getCarerContacts()
         val patientName = carerManager.getPatientName()
         val telemetry = DiagnosticManager.telemetry.value
@@ -98,9 +100,10 @@ class PolarForegroundService : Service() {
                 patientName = patientName,
                 telemetry = telemetry,
                 position = position,
-                isTest = isTest
+                isTest = isTest,
+                isPanic = isPanic
             )
-            DiagnosticManager.log(LogLevel.INFO, "Emergency dispatch completed: $sent SMS sent.")
+            DiagnosticManager.log(LogLevel.INFO, "$eventLabel emergency dispatch completed: $sent SMS sent.")
         }
     }
 
@@ -162,6 +165,10 @@ class PolarForegroundService : Service() {
             ACTION_TEST_SMS_ALERT -> {
                 DiagnosticManager.log(LogLevel.INFO, "Manual test SMS alert requested by user.")
                 triggerEmergencyAlert(isTest = true)
+            }
+            ACTION_PANIC_ALERT -> {
+                DiagnosticManager.log(LogLevel.WARN, "Manual PANIC button pressed by user.")
+                triggerEmergencyAlert(isPanic = true)
             }
             ACTION_START -> {
                 startMonitoring()

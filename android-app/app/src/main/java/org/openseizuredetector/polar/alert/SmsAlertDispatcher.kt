@@ -2,7 +2,10 @@ package org.openseizuredetector.polar.alert
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.os.BatteryManager
 import android.os.Build
 import android.telephony.SmsManager
 import androidx.core.content.ContextCompat
@@ -16,6 +19,25 @@ import java.util.Locale
 class SmsAlertDispatcher(private val context: Context) {
 
     private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+
+    private fun getPhoneBatteryLevel(): Int? {
+        return try {
+            val bm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
+            val level = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+            if (level != null && level in 0..100) {
+                level
+            } else {
+                val batteryStatus = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                val rawLevel = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                val scale = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+                if (rawLevel >= 0 && scale > 0) {
+                    ((rawLevel / scale.toFloat()) * 100).toInt()
+                } else null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
 
     fun hasSmsPermission(): Boolean {
         return ContextCompat.checkSelfPermission(
@@ -52,7 +74,8 @@ class SmsAlertDispatcher(private val context: Context) {
         patientName: String,
         telemetry: LiveBleDiagnostics,
         position: GeoPosition?,
-        isTest: Boolean = false
+        isTest: Boolean = false,
+        isPanic: Boolean = false
     ): Int {
         if (!hasSmsPermission()) {
             DiagnosticManager.log(
@@ -74,9 +97,20 @@ class SmsAlertDispatcher(private val context: Context) {
         val smsManager = getSmsManager() ?: return 0
         val timestamp = timeFormat.format(Date())
 
-        val prefix = if (isTest) "[TEST ALERT] " else "🚨 EMERGENCY: "
+        val prefix = when {
+            isPanic -> "🆘 PANIC ALERT: "
+            isTest -> "[TEST ALERT] "
+            else -> "🚨 EMERGENCY: "
+        }
+        val eventDesc = when {
+            isPanic -> "Panic button pressed by $patientName"
+            isTest -> "Polar-Seizure test report for $patientName"
+            else -> "Polar-Seizure detected possible seizure for $patientName"
+        }
         val hrInfo = telemetry.heartRateBpm?.let { " HR: ${it}bpm." } ?: ""
-        val battInfo = telemetry.batteryLevel?.let { " Band Batt: ${it}%." } ?: ""
+        val bandBatt = telemetry.batteryLevel?.let { " Band: ${it}%." } ?: ""
+        val phoneBatt = getPhoneBatteryLevel()?.let { " Phone: ${it}%." } ?: ""
+        val threshInfo = if (!isPanic) " Thresh: 3-8Hz (Ratio>=50%, Pwr>=0.05)." else ""
 
         val locationInfo = if (position != null) {
             "\nLocation: ${position.toMapsUrl()} (±${position.accuracyMeters.toInt()}m)"
@@ -84,7 +118,7 @@ class SmsAlertDispatcher(private val context: Context) {
             "\nLocation: GPS acquiring / unavailable"
         }
 
-        val messageText = "${prefix}Polar-Seizure detected possible seizure for $patientName at $timestamp.$hrInfo$battInfo$locationInfo"
+        val messageText = "$prefix$eventDesc at $timestamp.$hrInfo$bandBatt$phoneBatt$threshInfo$locationInfo"
 
         var sentCount = 0
         for (carer in enabledContacts) {
