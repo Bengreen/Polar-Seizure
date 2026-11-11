@@ -94,11 +94,12 @@ class PolarBleClient(
     companion object {
         private const val MIN_SCAN_INTERVAL_MS = 3000L
         private const val SCAN_RETRY_DELAY_MS = 5000L
-        // Chart window: 30 seconds at 10 Hz sampling rate = 300 points
-        private const val CHART_SAMPLE_INTERVAL_MS = 100L
-        private const val CHART_MAX_POINTS = 300
-        // HR usually reports 1 Hz; keep up to 35 seconds of HR history (~35 points)
-        private const val HR_MAX_POINTS = 35
+        // Chart window: 5 minutes (300 seconds)
+        // Record 1 point every 500ms = 600 points for a smooth 5-minute accelerometer & energy timeline
+        private const val CHART_SAMPLE_INTERVAL_MS = 500L
+        private const val CHART_MAX_POINTS = 600
+        // HR usually reports 1 Hz; retain up to 5 minutes of HR history (300 points)
+        private const val HR_MAX_POINTS = 300
 
         // Optical HR Duty Cycle: Active for up to 12s, then sleep for 300s (5 minutes)
         private const val PPG_DUTY_ACTIVE_DURATION_MS = 12_000L

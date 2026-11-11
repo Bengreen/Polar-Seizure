@@ -463,7 +463,7 @@ fun DashboardView(
             }
         }
 
-        // Accel preview & Live Waveform (30-Second Rolling Window)
+        // Accel preview & Live Waveform (5-Minute Rolling Window)
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(
@@ -472,7 +472,7 @@ fun DashboardView(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(text = "Live Accelerometer & Energy", style = MaterialTheme.typography.titleSmall)
-                    Text(text = "30s Window", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                    Text(text = "5m Window", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                 }
                 Spacer(modifier = Modifier.height(6.dp))
 
@@ -503,16 +503,15 @@ fun DashboardView(
                             val w = size.width
                             val h = size.height
                             val midY = h / 2f
-                            // Fixed 300 points scale (30 seconds) so the chart scrolls smoothly across the full width
-                            val maxPoints = 300
-                            val stepX = w / (maxPoints - 1).toFloat()
-                            val startOffsetIndex = (maxPoints - history.size).coerceAtLeast(0)
+                            // 5-minute (300 seconds) temporal window
+                            val now = System.currentTimeMillis()
+                            val windowDurationMs = 300_000L
 
-                            // 10-second grid lines
-                            val grid10s = w * (10f / 30f)
-                            val grid20s = w * (20f / 30f)
-                            drawLine(color = Color(0xFF2C2C2C), start = Offset(grid10s, 0f), end = Offset(grid10s, h), strokeWidth = 1f)
-                            drawLine(color = Color(0xFF2C2C2C), start = Offset(grid20s, 0f), end = Offset(grid20s, h), strokeWidth = 1f)
+                            // 1-minute grid markers (5 vertical divisions)
+                            for (m in 1..4) {
+                                val gridX = w * (m.toFloat() / 5f)
+                                drawLine(color = Color(0xFF2C2C2C), start = Offset(gridX, 0f), end = Offset(gridX, h), strokeWidth = 1f)
+                            }
 
                             // Center baseline (0g)
                             drawLine(
@@ -531,11 +530,7 @@ fun DashboardView(
                                 strokeWidth = 1f
                             )
 
-                            // 30-second temporal alignment matching HR chart
-                            val now = System.currentTimeMillis()
-                            val windowDurationMs = 30_000L
-
-                            // Filter points within the last 30 seconds
+                            // Filter points within the last 5 minutes
                             val visiblePoints = history.filter { (now - it.timestamp) in 0..windowDurationMs }
 
                             val pathX = Path()
@@ -551,9 +546,8 @@ fun DashboardView(
                                 val xPos = (w - (timeAgoMs.toFloat() / windowDurationMs.toFloat()) * w).coerceIn(0f, w)
 
                                 val prevPt = visiblePoints.getOrNull(i - 1)
-                                // Only break lines if there is a genuine multi-second telemetry drop (> 2000ms),
-                                // not normal inter-packet jitter or minor delay.
-                                val isGap = prevPt != null && (pt.timestamp - prevPt.timestamp) > 2000L
+                                // Only break lines if there is a gap > 5 seconds
+                                val isGap = prevPt != null && (pt.timestamp - prevPt.timestamp) > 5000L
 
                                 if (i == 0 || isGap) {
                                     pathX.moveTo(xPos, scaleAcc(pt.x))
@@ -596,7 +590,7 @@ fun DashboardView(
                         Text(text = "● 3-8Hz Energy", color = Color(0xFFFFD54F), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                     Text(
-                        text = "-30s ⟵ Now",
+                        text = "-5m ⟵ Now",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.Gray,
                         fontSize = 11.sp
@@ -605,7 +599,7 @@ fun DashboardView(
             }
         }
 
-        // Live Heart Rate Waveform (Synchronized 30-Second Rolling Window)
+        // Live Heart Rate Waveform (Synchronized 5-Minute Rolling Window)
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(
@@ -637,11 +631,11 @@ fun DashboardView(
                             val w = size.width
                             val h = size.height
 
-                            // Grid lines matching the 30-second window
-                            val grid10s = w * (10f / 30f)
-                            val grid20s = w * (20f / 30f)
-                            drawLine(color = Color(0xFF2C2C2C), start = Offset(grid10s, 0f), end = Offset(grid10s, h), strokeWidth = 1f)
-                            drawLine(color = Color(0xFF2C2C2C), start = Offset(grid20s, 0f), end = Offset(grid20s, h), strokeWidth = 1f)
+                            // 1-minute grid markers (5 vertical divisions)
+                            for (m in 1..4) {
+                                val gridX = w * (m.toFloat() / 5f)
+                                drawLine(color = Color(0xFF2C2C2C), start = Offset(gridX, 0f), end = Offset(gridX, h), strokeWidth = 1f)
+                            }
 
                             // Normal resting HR reference lines: 60 BPM and 100 BPM
                             // Dynamic scale between min(40, lowest) and max(140, highest)
@@ -664,11 +658,11 @@ fun DashboardView(
                                 )
                             }
 
-                            // 30-second aligned time window
+                            // 5-minute aligned time window (300_000 ms)
                             val now = System.currentTimeMillis()
-                            val windowDurationMs = 30_000L
+                            val windowDurationMs = 300_000L
 
-                            // Only render points within the last 30 seconds
+                            // Only render points within the last 5 minutes
                             val visibleHrPoints = hrHistory.filter { (now - it.timestamp) in 0..windowDurationMs }
 
                             val pathHr = Path()
@@ -678,8 +672,8 @@ fun DashboardView(
                                 val yPos = scaleBpm(pt.bpm)
 
                                 val prevPt = visibleHrPoints.getOrNull(i - 1)
-                                // If gap between HR samples exceeds 3.5s (e.g. duty cycle sleep interval), break line
-                                val isGap = prevPt != null && (pt.timestamp - prevPt.timestamp) > 3500L
+                                // If gap between HR samples exceeds 10s (e.g. duty cycle sleep interval), break line
+                                val isGap = prevPt != null && (pt.timestamp - prevPt.timestamp) > 10_000L
 
                                 if (i == 0 || isGap) {
                                     pathHr.moveTo(xPos, yPos)
@@ -716,7 +710,7 @@ fun DashboardView(
                 ) {
                     Text(text = "♥ Heart Rate (BPM)", color = Color(0xFFE91E63), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     Text(
-                        text = "-30s ⟵ Now",
+                        text = "-5m ⟵ Now",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.Gray,
                         fontSize = 11.sp
