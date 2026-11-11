@@ -350,8 +350,16 @@ fun DashboardView(
                         fontWeight = FontWeight.Bold
                     )
                     if (telemetry.batteryLevel != null) {
+                        val estHours = telemetry.batteryRemainingHoursEstimate
+                            ?: ((telemetry.batteryLevel / 100.0) * 36.0)
+                        val estString = if (estHours >= 24.0) {
+                            val days = estHours / 24.0
+                            "~%.1fd".format(days)
+                        } else {
+                            "~%.0fh".format(estHours)
+                        }
                         Text(
-                            text = "• ${telemetry.batteryLevel}%",
+                            text = "• ${telemetry.batteryLevel}% ($estString)",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.SemiBold
                         )

@@ -216,12 +216,17 @@ class PolarBleClient(
             }
 
             override fun batteryLevelReceived(identifier: String, level: Int) {
+                // Polar Loop with 25 Hz ACC and duty-cycled PPG (15s on / 180s off) achieves ~36 hours from 100%.
+                val estimatedHours = (level / 100.0) * 36.0
                 DiagnosticManager.log(
                     LogLevel.INFO,
-                    "Battery level received for $identifier: $level%"
+                    "Battery level received for $identifier: $level% (~${"%.1f".format(estimatedHours)}h remaining)"
                 )
                 DiagnosticManager.updateTelemetry {
-                    it.copy(batteryLevel = level)
+                    it.copy(
+                        batteryLevel = level,
+                        batteryRemainingHoursEstimate = estimatedHours
+                    )
                 }
             }
 
