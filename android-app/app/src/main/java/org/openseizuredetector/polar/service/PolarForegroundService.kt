@@ -19,6 +19,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import org.openseizuredetector.polar.MainActivity
 import org.openseizuredetector.polar.R
+import org.openseizuredetector.polar.alert.CarerContactManager
+import org.openseizuredetector.polar.alert.LocationProvider
+import org.openseizuredetector.polar.alert.SmsAlertDispatcher
 import org.openseizuredetector.polar.ble.DiagnosticManager
 import org.openseizuredetector.polar.ble.LogLevel
 import org.openseizuredetector.polar.ble.PolarBleClient
@@ -34,6 +37,11 @@ class PolarForegroundService : Service() {
     private lateinit var watchdog: DeadmanWatchdog
     private var lastReportedState: SeizureAlarmState? = null
 
+    private val carerManager by lazy { CarerContactManager(this) }
+    private val locationProvider by lazy { LocationProvider(this) }
+    private val smsDispatcher by lazy { SmsAlertDispatcher(this) }
+    private var lastSmsDispatchTimeMs: Long = 0
+
     companion object {
         const val CHANNEL_ID = "polar_monitoring_channel"
         const val NOTIFICATION_ID = 1001
@@ -44,7 +52,9 @@ class PolarForegroundService : Service() {
         const val ACTION_DISCONNECT_DEVICE = "ACTION_DISCONNECT_DEVICE"
         const val ACTION_START_SCAN = "ACTION_START_SCAN"
         const val ACTION_STOP_SCAN = "ACTION_STOP_SCAN"
+        const val ACTION_TEST_SMS_ALERT = "ACTION_TEST_SMS_ALERT"
         const val EXTRA_DEVICE_ID = "EXTRA_DEVICE_ID"
+        private const val SMS_COOLDOWN_MS = 60_000L // Prevent SMS storming (1 min cooldown between alarms)
     }
 
     private fun initPolarClient() {
@@ -55,12 +65,42 @@ class PolarForegroundService : Service() {
                     lastReportedState = alarmState
                     when (alarmState) {
                         SeizureAlarmState.WARNING -> updateNotification("⚠️ WARNING: Rhythmic seizure motion detected")
-                        SeizureAlarmState.ALARM -> updateNotification("🚨 ALARM: Prolonged seizure activity confirmed!")
+                        SeizureAlarmState.ALARM -> {
+                            updateNotification("🚨 ALARM: Prolonged seizure activity confirmed!")
+                            triggerEmergencyAlert(isTest = false)
+                        }
                         SeizureAlarmState.DISCONNECTED -> updateNotification("Sensor disconnected")
                         SeizureAlarmState.NORMAL -> updateNotification("Monitoring active — Normal")
                     }
                 }
             }
+        }
+    }
+
+    private fun triggerEmergencyAlert(isTest: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!isTest && (now - lastSmsDispatchTimeMs) < SMS_COOLDOWN_MS) {
+            DiagnosticManager.log(LogLevel.WARN, "Alert SMS throttled (cooldown active).")
+            return
+        }
+        if (!isTest) {
+            lastSmsDispatchTimeMs = now
+        }
+
+        DiagnosticManager.log(LogLevel.INFO, "Initiating emergency dispatch (locating + SMS)...")
+        val contacts = carerManager.getCarerContacts()
+        val patientName = carerManager.getPatientName()
+        val telemetry = DiagnosticManager.telemetry.value
+
+        locationProvider.requestFreshPosition { position ->
+            val sent = smsDispatcher.dispatchSeizureAlert(
+                contacts = contacts,
+                patientName = patientName,
+                telemetry = telemetry,
+                position = position,
+                isTest = isTest
+            )
+            DiagnosticManager.log(LogLevel.INFO, "Emergency dispatch completed: $sent SMS sent.")
         }
     }
 
@@ -118,6 +158,10 @@ class PolarForegroundService : Service() {
             }
             ACTION_STOP_SCAN -> {
                 polarBleClient?.stopScan()
+            }
+            ACTION_TEST_SMS_ALERT -> {
+                DiagnosticManager.log(LogLevel.INFO, "Manual test SMS alert requested by user.")
+                triggerEmergencyAlert(isTest = true)
             }
             ACTION_START -> {
                 startMonitoring()

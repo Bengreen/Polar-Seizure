@@ -15,6 +15,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
+import org.openseizuredetector.polar.alert.CarerContact
+import org.openseizuredetector.polar.alert.CarerContactManager
+import org.openseizuredetector.polar.alert.LocationProvider
+import org.openseizuredetector.polar.alert.SmsAlertDispatcher
 import org.openseizuredetector.polar.incident.DailyArchiveFileInfo
 import org.openseizuredetector.polar.incident.DailyTelemetryLogger
 import androidx.compose.foundation.Canvas
@@ -90,7 +94,8 @@ class MainActivity : ComponentActivity() {
                     onStopService = { stopMonitoringService() },
                     onConnectDevice = { deviceId -> connectDevice(deviceId) },
                     onDisconnectDevice = { deviceId -> disconnectDevice(deviceId) },
-                    onTriggerScan = { triggerScan() }
+                    onTriggerScan = { triggerScan() },
+                    onTriggerTestAlert = { triggerTestAlert() }
                 )
             }
         }
@@ -140,6 +145,13 @@ class MainActivity : ComponentActivity() {
         }
         startService(intent)
     }
+
+    private fun triggerTestAlert() {
+        val intent = Intent(this, PolarForegroundService::class.java).apply {
+            action = PolarForegroundService.ACTION_TEST_SMS_ALERT
+        }
+        startService(intent)
+    }
 }
 
 @Composable
@@ -148,7 +160,8 @@ fun MainScreen(
     onStopService: () -> Unit,
     onConnectDevice: (String) -> Unit,
     onDisconnectDevice: (String) -> Unit,
-    onTriggerScan: () -> Unit
+    onTriggerScan: () -> Unit,
+    onTriggerTestAlert: () -> Unit
 ) {
     val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -166,6 +179,9 @@ fun MainScreen(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             list.add(Manifest.permission.POST_NOTIFICATIONS)
         }
+        list.add(Manifest.permission.SEND_SMS)
+        list.add(Manifest.permission.ACCESS_FINE_LOCATION)
+        list.add(Manifest.permission.ACCESS_COARSE_LOCATION)
         list
     }
 
@@ -259,11 +275,16 @@ fun MainScreen(
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    text = { Text("Devices (${discoveredDevices.size})") }
+                    text = { Text("Carers & Alerts") }
                 )
                 Tab(
                     selected = selectedTab == 2,
                     onClick = { selectedTab = 2 },
+                    text = { Text("Devices (${discoveredDevices.size})") }
+                )
+                Tab(
+                    selected = selectedTab == 3,
+                    onClick = { selectedTab = 3 },
                     text = { Text("Diagnostics & Logs") }
                 )
             }
@@ -272,7 +293,10 @@ fun MainScreen(
                 0 -> DashboardView(
                     telemetry = telemetry
                 )
-                1 -> DevicesView(
+                1 -> CarerAlertsView(
+                    onTriggerTestAlert = onTriggerTestAlert
+                )
+                2 -> DevicesView(
                     isMonitoring = isMonitoring,
                     devices = discoveredDevices,
                     connectedDeviceId = telemetry.connectedDeviceId,
@@ -282,7 +306,7 @@ fun MainScreen(
                     onDisconnect = onDisconnectDevice,
                     onTriggerScan = onTriggerScan
                 )
-                2 -> DiagnosticsView(
+                3 -> DiagnosticsView(
                     telemetry = telemetry,
                     logs = logs,
                     onCopyLogs = {
@@ -672,6 +696,239 @@ fun DashboardView(
                         color = Color.Gray,
                         fontSize = 11.sp
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CarerAlertsView(
+    onTriggerTestAlert: () -> Unit
+) {
+    val context = LocalContext.current
+    val carerManager = remember { CarerContactManager(context) }
+    val locationProvider = remember { LocationProvider(context) }
+    val smsDispatcher = remember { SmsAlertDispatcher(context) }
+
+    var patientName by remember { mutableStateOf(carerManager.getPatientName()) }
+    var contacts by remember { mutableStateOf(carerManager.getCarerContacts()) }
+    var newCarerName by remember { mutableStateOf("") }
+    var newCarerPhone by remember { mutableStateOf("") }
+    var currentGpsFix by remember { mutableStateOf<String>("Acquiring...") }
+
+    val hasSms = smsDispatcher.hasSmsPermission()
+    val hasLoc = locationProvider.hasLocationPermission()
+
+    LaunchedEffect(Unit) {
+        locationProvider.requestFreshPosition { pos ->
+            currentGpsFix = if (pos != null) {
+                "${"%.5f".format(pos.latitude)}, ${"%.5f".format(pos.longitude)} (±${pos.accuracyMeters.toInt()}m)"
+            } else {
+                "GPS fix unavailable"
+            }
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Patient Name Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "Wearer Profile",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = patientName,
+                        onValueChange = {
+                            patientName = it
+                            carerManager.savePatientName(it)
+                        },
+                        label = { Text("Wearer / Patient Name") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                }
+            }
+        }
+
+        // Permissions & Position Status Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (hasSms && hasLoc) Color(0xFFE8F5E9) else Color(0xFFFFF3E0)
+            )
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "Emergency Dispatch Status",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (hasSms && hasLoc) Color(0xFF2E7D32) else Color(0xFFE65100)
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "• SMS Permission: ${if (hasSms) "Granted ✓" else "Not Granted ✗"}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    text = "• Location Permission: ${if (hasLoc) "Granted ✓" else "Not Granted ✗"}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    text = "• Current Position: $currentGpsFix",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+
+        // Nominated Carers Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "Nominated Carers (${contacts.size})",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Emergency SMS and live Google Maps GPS pin will be dispatched to these contacts when a seizure alarm triggers.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (contacts.isEmpty()) {
+                    Text(
+                        text = "No nominated carers configured yet. Add at least one phone number below.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                } else {
+                    contacts.forEachIndexed { index, contact ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = contact.name.ifBlank { "Carer #${index + 1}" },
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = contact.phoneNumber,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.Gray
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    val updated = contacts.toMutableList()
+                                    updated.removeAt(index)
+                                    contacts = updated
+                                    carerManager.saveCarerContacts(updated)
+                                }
+                            ) {
+                                Text("Remove", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Add Carer Input Row
+                OutlinedTextField(
+                    value = newCarerName,
+                    onValueChange = { newCarerName = it },
+                    label = { Text("Carer Name (e.g. Dr. Smith or Jane)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = newCarerPhone,
+                        onValueChange = { newCarerPhone = it },
+                        label = { Text("Phone Number") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    Button(
+                        onClick = {
+                            if (newCarerPhone.isNotBlank()) {
+                                val updated = contacts + CarerContact(
+                                    name = newCarerName.ifBlank { "Carer #${contacts.size + 1}" },
+                                    phoneNumber = newCarerPhone
+                                )
+                                contacts = updated
+                                carerManager.saveCarerContacts(updated)
+                                newCarerName = ""
+                                newCarerPhone = ""
+                            }
+                        },
+                        enabled = newCarerPhone.isNotBlank()
+                    ) {
+                        Text("Add")
+                    }
+                }
+            }
+        }
+
+        // Test Alert Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "Dispatch Test",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Dispatches a [TEST ALERT] SMS with the wearer's current HR, band battery %, and Google Maps GPS position to all active carers above.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                    onClick = onTriggerTestAlert,
+                    enabled = contacts.isNotEmpty() && hasSms,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))
+                ) {
+                    Text("Send Test Emergency SMS & Position Alert")
                 }
             }
         }
