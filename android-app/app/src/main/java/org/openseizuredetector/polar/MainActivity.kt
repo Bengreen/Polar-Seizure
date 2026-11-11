@@ -180,6 +180,7 @@ fun MainScreen(
             list.add(Manifest.permission.POST_NOTIFICATIONS)
         }
         list.add(Manifest.permission.SEND_SMS)
+        list.add(Manifest.permission.READ_PHONE_STATE)
         list.add(Manifest.permission.ACCESS_FINE_LOCATION)
         list.add(Manifest.permission.ACCESS_COARSE_LOCATION)
         list
