@@ -154,10 +154,20 @@ class PolarForegroundService : Service() {
                 fgsType
             )
 
-            // Start scanning for nearby Polar wearables with a slight delay to allow the
-            // Android Bluetooth stack & GATT server to fully bind after service initialization.
+            // If we have a previously connected device remembered, auto-connect immediately.
+            // Additionally run startScan() so that if the device needs to be discovered first or
+            // re-advertised, discovery will also pick it up and trigger auto-connect.
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                polarBleClient?.startScan()
+                val client = polarBleClient
+                if (client != null) {
+                    val attempted = client.autoConnectIfRemembered()
+                    if (!attempted) {
+                        client.startScan()
+                    } else {
+                        // Also run background scan to ensure discovery callback can catch advertisement if direct connect needs discovery
+                        client.startScan()
+                    }
+                }
             }, 1200L)
         } catch (e: Exception) {
             DiagnosticManager.log(LogLevel.ERROR, "Error starting foreground service: ${e.localizedMessage}")

@@ -115,6 +115,22 @@ class PolarBleClient(
         private const val SEIZURE_MIN_POWER = 0.10
         private const val SEIZURE_RATIO_PERCENT = 45.0
         private const val REQUIRED_CONSECUTIVE_WINDOWS = 2
+
+        private const val PREFS_NAME = "polar_seizure_prefs"
+        private const val KEY_LAST_CONNECTED_DEVICE_ID = "last_connected_device_id"
+    }
+
+    private val sharedPrefs by lazy {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    }
+
+    fun getLastConnectedDeviceId(): String? {
+        return sharedPrefs.getString(KEY_LAST_CONNECTED_DEVICE_ID, null)
+    }
+
+    private fun saveLastConnectedDeviceId(deviceId: String) {
+        sharedPrefs.edit().putString(KEY_LAST_CONNECTED_DEVICE_ID, deviceId).apply()
+        DiagnosticManager.log(LogLevel.INFO, "Remembered last connected device: $deviceId")
     }
 
     val api: PolarBleApi = PolarBleApiDefaultImpl.defaultImplementation(
@@ -173,6 +189,7 @@ class PolarBleClient(
 
             override fun deviceConnected(polarDeviceInfo: PolarDeviceInfo) {
                 connectedDeviceId = polarDeviceInfo.deviceId
+                saveLastConnectedDeviceId(polarDeviceInfo.deviceId)
                 DiagnosticManager.log(
                     LogLevel.SUCCESS,
                     "Device connected: ${polarDeviceInfo.name} (${polarDeviceInfo.deviceId})"
@@ -298,6 +315,15 @@ class PolarBleClient(
                         LogLevel.INFO,
                         "Discovered: ${deviceInfo.name} (${deviceInfo.deviceId}) RSSI: ${deviceInfo.rssi} dBm"
                     )
+
+                    val rememberedId = getLastConnectedDeviceId()
+                    if (rememberedId != null && deviceInfo.deviceId.equals(rememberedId, ignoreCase = true) && connectedDeviceId == null) {
+                        DiagnosticManager.log(
+                            LogLevel.SUCCESS,
+                            "Discovered remembered device $rememberedId! Auto-connecting..."
+                        )
+                        connect(deviceInfo.deviceId)
+                    }
                 },
                 { error ->
                     val errorMsg = error.localizedMessage ?: error.javaClass.simpleName
@@ -340,6 +366,19 @@ class PolarBleClient(
             }
         }
         scanDisposable = null
+    }
+
+    fun autoConnectIfRemembered(): Boolean {
+        val rememberedId = getLastConnectedDeviceId()
+        if (!rememberedId.isNullOrEmpty() && connectedDeviceId == null) {
+            DiagnosticManager.log(
+                LogLevel.INFO,
+                "Auto-connect target identified: $rememberedId. Initiating direct connection..."
+            )
+            connect(rememberedId)
+            return true
+        }
+        return false
     }
 
     fun connect(deviceId: String) {
