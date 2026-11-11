@@ -2,16 +2,14 @@ package org.openseizuredetector.polar.alert
 
 import android.Manifest
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.os.BatteryManager
 import android.os.Build
 import android.telephony.SmsManager
 import androidx.core.content.ContextCompat
 import org.openseizuredetector.polar.ble.DiagnosticManager
-import org.openseizuredetector.polar.ble.LogLevel
 import org.openseizuredetector.polar.ble.LiveBleDiagnostics
+import org.openseizuredetector.polar.ble.LogLevel
+import org.openseizuredetector.polar.model.EmergencyAlertType
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -19,25 +17,6 @@ import java.util.Locale
 class SmsAlertDispatcher(private val context: Context) {
 
     private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
-
-    private fun getPhoneBatteryLevel(): Int? {
-        return try {
-            val bm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
-            val level = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-            if (level != null && level in 0..100) {
-                level
-            } else {
-                val batteryStatus = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-                val rawLevel = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
-                val scale = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
-                if (rawLevel >= 0 && scale > 0) {
-                    ((rawLevel / scale.toFloat()) * 100).toInt()
-                } else null
-            }
-        } catch (e: Exception) {
-            null
-        }
-    }
 
     fun hasSmsPermission(): Boolean {
         return ContextCompat.checkSelfPermission(
@@ -69,13 +48,17 @@ class SmsAlertDispatcher(private val context: Context) {
         }
     }
 
-    fun dispatchSeizureAlert(
+    /**
+     * Dispatch emergency alert SMS according to the required template:
+     * For panic, seizure, and high-g: includes HR, Seizure Threshold/Ratio, and Position (Google Maps link).
+     * Excludes battery levels per clinical safety guidelines.
+     */
+    fun dispatchEmergencyAlert(
+        alertType: EmergencyAlertType,
         contacts: List<CarerContact>,
         patientName: String,
         telemetry: LiveBleDiagnostics,
-        position: GeoPosition?,
-        isTest: Boolean = false,
-        isPanic: Boolean = false
+        position: GeoPosition?
     ): Int {
         if (!hasSmsPermission()) {
             DiagnosticManager.log(
@@ -97,37 +80,27 @@ class SmsAlertDispatcher(private val context: Context) {
         val smsManager = getSmsManager() ?: return 0
         val timestamp = timeFormat.format(Date())
 
-        val prefix = when {
-            isPanic -> "🆘 PANIC ALERT: "
-            isTest -> "[TEST ALERT] "
-            else -> "🚨 EMERGENCY: "
-        }
-        val eventDesc = when {
-            isPanic -> "Panic button pressed by $patientName"
-            isTest -> "Polar-Seizure test report for $patientName"
-            else -> "Polar-Seizure detected possible seizure for $patientName"
-        }
-        val hrValue = telemetry.heartRateBpm?.let { "${it}bpm" } ?: "N/A"
-        val hrInfo = " HR: $hrValue."
-
-        val ratioFormatted = "%.1f".format(telemetry.energyRatioPercent)
+        val hrString = telemetry.heartRateBpm?.let { "${it} bpm" } ?: "N/A"
+        val ratioFormatted = "%.1f%%".format(telemetry.energyRatioPercent)
         val powerFormatted = "%.3f".format(telemetry.seizurePower3to8Hz)
-        val threshInfo = " Thresh: 3-8Hz (Ratio>=50%, Pwr>=0.05 | Current: ${ratioFormatted}%, ${powerFormatted})."
+        val seizureMetrics = "$ratioFormatted (Pwr: $powerFormatted)"
 
-        val locationInfo = if (position != null) {
-            "\nLocation: ${position.toMapsUrl()} (±${position.accuracyMeters.toInt()}m)"
+        val locationString = if (position != null) {
+            "${position.toMapsUrl()} (±${position.accuracyMeters.toInt()}m)"
         } else {
-            "\nLocation: GPS acquiring / unavailable"
+            "GPS acquiring / unavailable"
         }
 
-        val messageText = "$prefix$eventDesc at $timestamp.$hrInfo$threshInfo$locationInfo"
+        // Standardized alert template:
+        // [POLAR-SEIZURE ALERT: <TYPE>] Patient: <Name> | Time: <Time> | HR: <HR> | Seizure Threshold: <Ratio> | Location: <URL>
+        val messageText = "[${alertType.smsPrefix}] Patient: $patientName | Time: $timestamp | HR: $hrString | Seizure Threshold: $seizureMetrics | Location: $locationString"
 
         var sentCount = 0
         for (carer in enabledContacts) {
             try {
                 DiagnosticManager.log(
                     LogLevel.INFO,
-                    "Sending alert SMS to ${carer.name} (${carer.phoneNumber})..."
+                    "Sending ${alertType.displayName} SMS to ${carer.name} (${carer.phoneNumber})..."
                 )
                 val parts = smsManager.divideMessage(messageText)
                 if (parts.size > 1) {

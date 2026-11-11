@@ -10,6 +10,7 @@ import com.polar.sdk.api.model.PolarSensorSetting
 import io.reactivex.rxjava3.disposables.CompositeDisposable
 import io.reactivex.rxjava3.disposables.Disposable
 import java.util.UUID
+import org.openseizuredetector.polar.dsp.HighGFallDetector
 import org.openseizuredetector.polar.dsp.OpticalPulseEngine
 import org.openseizuredetector.polar.dsp.SeizureFftEngine
 import org.openseizuredetector.polar.incident.DailyTelemetryLogger
@@ -18,7 +19,8 @@ import org.openseizuredetector.polar.model.SeizureAlarmState
 
 class PolarBleClient(
     private val context: Context,
-    private val onAlarmStateChanged: (SeizureAlarmState) -> Unit
+    private val onAlarmStateChanged: (SeizureAlarmState) -> Unit,
+    private val onHighGFallDetected: () -> Unit = {}
 ) {
     private val disposables = CompositeDisposable()
     private var scanDisposable: Disposable? = null
@@ -28,6 +30,7 @@ class PolarBleClient(
     private var ppgStreamDisposable: Disposable? = null
 
     private val fftEngine = SeizureFftEngine()
+    private val fallDetector = HighGFallDetector()
     private val pulseEngine = OpticalPulseEngine()
     val incidentRecorder = IncidentDataRecorder(context)
     val dailyLogger = DailyTelemetryLogger(context)
@@ -555,6 +558,13 @@ class PolarBleClient(
             val analysis = fftEngine.addSample(gx, gy, gz)
             if (analysis != null) {
                 onAlarmStateChanged(analysis.state)
+            }
+
+            // High-G fall / impact detection (PRD-003 §7.2)
+            val fallConfirmed = fallDetector.addSample(now, gx, gy, gz)
+            if (fallConfirmed) {
+                DiagnosticManager.log(LogLevel.WARN, "High-G Fall impact and stillness confirmed (${String.format(java.util.Locale.US, "%.1fg", fallDetector.getPeakImpactG())})")
+                onHighGFallDetected()
             }
 
             val magnitude = Math.sqrt(gx * gx + gy * gy + gz * gz) - 1.0
