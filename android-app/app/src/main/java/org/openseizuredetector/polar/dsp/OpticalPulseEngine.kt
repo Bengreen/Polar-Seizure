@@ -115,6 +115,9 @@ class OpticalPulseEngine(
     }
 
     @Synchronized
+    fun isPulseLocked(): Boolean = recentIbiMs.size >= IBI_HISTORY_SIZE && currentBpm in 40..200
+
+    @Synchronized
     fun getLastBpm(): Int = currentBpm
 
     @Synchronized

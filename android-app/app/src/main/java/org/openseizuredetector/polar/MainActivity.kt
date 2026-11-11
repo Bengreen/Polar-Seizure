@@ -42,6 +42,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -194,6 +195,18 @@ fun MainScreen(
         }
     }
 
+    // Default to started on app launch if permissions already granted
+    LaunchedEffect(Unit) {
+        if (!isMonitoring) {
+            val missing = requiredPermissions.filter {
+                ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+            }
+            if (missing.isEmpty()) {
+                onStartService()
+            }
+        }
+    }
+
     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
         Column(
             modifier = Modifier
@@ -257,15 +270,14 @@ fun MainScreen(
 
             when (selectedTab) {
                 0 -> DashboardView(
-                    isMonitoring = isMonitoring,
-                    telemetry = telemetry,
-                    onStart = { checkAndStartService() },
-                    onStop = { onStopService() }
+                    telemetry = telemetry
                 )
                 1 -> DevicesView(
                     isMonitoring = isMonitoring,
                     devices = discoveredDevices,
                     connectedDeviceId = telemetry.connectedDeviceId,
+                    onStart = { checkAndStartService() },
+                    onStop = { onStopService() },
                     onConnect = onConnectDevice,
                     onDisconnect = onDisconnectDevice,
                     onTriggerScan = onTriggerScan
@@ -288,19 +300,16 @@ fun MainScreen(
 
 @Composable
 fun DashboardView(
-    isMonitoring: Boolean,
-    telemetry: LiveBleDiagnostics,
-    onStart: () -> Unit,
-    onStop: () -> Unit
+    telemetry: LiveBleDiagnostics
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Status Card
+        // Compact Status Strip: shows Connection status, Battery, and Stream state without bloated device info
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -312,74 +321,81 @@ fun DashboardView(
                 }
             )
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "Connection: ${telemetry.connectionState}",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = if (telemetry.connectedDeviceName != null) {
-                        "Target: ${telemetry.connectedDeviceName} (${telemetry.connectedDeviceId})"
-                    } else {
-                        "No device connected"
-                    },
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                if (telemetry.batteryLevel != null) {
-                    Text(
-                        text = "Wristband Battery: ${telemetry.batteryLevel}%",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .background(
+                                color = when (telemetry.connectionState) {
+                                    "CONNECTED" -> Color(0xFF388E3C)
+                                    "CONNECTING" -> Color(0xFFF57C00)
+                                    else -> Color.Gray
+                                },
+                                shape = CircleShape
+                            )
                     )
-                }
-                if (telemetry.heartRateBpm != null) {
                     Text(
-                        text = "Heart Rate: ${telemetry.heartRateBpm} BPM",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFFD32F2F)
+                        text = telemetry.connectionState,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold
                     )
-                }
-                Text(
-                    text = "Streams: ACC: ${if (telemetry.isStreamingAcc) "ACTIVE" else "OFF"} | HR: ${
-                        when {
-                            telemetry.isIncidentRecording -> "INCIDENT (CONTINUOUS)"
-                            telemetry.isStreamingHr -> "DUTY ACTIVE (15s)"
-                            telemetry.isPpgDutyCycleActive -> "DUTY SLEEP (SAVING)"
-                            else -> "OFF"
+                    if (telemetry.batteryLevel != null) {
+                        val estHours = telemetry.batteryRemainingHoursEstimate
+                            ?: ((telemetry.batteryLevel / 100.0) * 60.0)
+                        val estString = if (estHours >= 24.0) {
+                            val days = estHours / 24.0
+                            "~%.1fd".format(days)
+                        } else {
+                            "~%.0fh".format(estHours)
                         }
-                    }",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (telemetry.isIncidentRecording) Color(0xFFD32F2F) else Color.Gray
-                )
-                if (telemetry.isIncidentRecording) {
-                    Text(
-                        text = "● PRESERVING INCIDENT DATA TO DISK",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFFD32F2F)
-                    )
+                        Text(
+                            text = "• ${telemetry.batteryLevel}% ($estString)",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
+
+                Text(
+                    text = when {
+                        telemetry.isIncidentRecording -> "INCIDENT STREAM"
+                        telemetry.isStreamingHr -> "HR DUTY ACTIVE"
+                        telemetry.isPpgDutyCycleActive -> "HR DUTY SLEEP"
+                        telemetry.isStreamingAcc -> "ACC ACTIVE"
+                        else -> "IDLE"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (telemetry.isIncidentRecording) Color(0xFFD32F2F) else Color(0xFF1976D2)
+                )
             }
         }
 
         // Live DSP Energy Card
         Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column(modifier = Modifier.padding(12.dp)) {
                 Text(text = "Spectral Energy (3–8 Hz Seizure Band)", style = MaterialTheme.typography.titleSmall)
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
                 val ratioProgress = (telemetry.energyRatioPercent / 100.0).toFloat().coerceIn(0f, 1f)
                 LinearProgressIndicator(
                     progress = { ratioProgress },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(8.dp),
+                        .height(6.dp),
                     color = if (telemetry.energyRatioPercent >= 50.0) Color.Red else Color(0xFF4CAF50),
                 )
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
@@ -486,7 +502,9 @@ fun DashboardView(
                                 val xPos = (w - (timeAgoMs.toFloat() / windowDurationMs.toFloat()) * w).coerceIn(0f, w)
 
                                 val prevPt = visiblePoints.getOrNull(i - 1)
-                                val isGap = prevPt != null && (pt.timestamp - prevPt.timestamp) > 500L
+                                // Only break lines if there is a genuine multi-second telemetry drop (> 2000ms),
+                                // not normal inter-packet jitter or minor delay.
+                                val isGap = prevPt != null && (pt.timestamp - prevPt.timestamp) > 2000L
 
                                 if (i == 0 || isGap) {
                                     pathX.moveTo(xPos, scaleAcc(pt.x))
@@ -657,31 +675,6 @@ fun DashboardView(
                 }
             }
         }
-
-        Spacer(modifier = Modifier.weight(1f))
-
-        // Service Controls
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Button(
-                modifier = Modifier.weight(1f),
-                onClick = onStart,
-                enabled = !isMonitoring
-            ) {
-                Text("Start Service")
-            }
-
-            Button(
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-                onClick = onStop,
-                enabled = isMonitoring
-            ) {
-                Text("Stop Service")
-            }
-        }
     }
 }
 
@@ -690,6 +683,8 @@ fun DevicesView(
     isMonitoring: Boolean,
     devices: List<DiscoveredDevice>,
     connectedDeviceId: String?,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
     onConnect: (String) -> Unit,
     onDisconnect: (String) -> Unit,
     onTriggerScan: () -> Unit
@@ -701,6 +696,51 @@ fun DevicesView(
             .fillMaxSize()
             .padding(16.dp)
     ) {
+        // Foreground Service Controls Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = "Monitoring Service State",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = if (isMonitoring) "Service is ACTIVE (Auto-starts on boot)" else "Service is STOPPED",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isMonitoring) Color(0xFF388E3C) else Color.Gray,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        modifier = Modifier.weight(1f),
+                        onClick = onStart,
+                        enabled = !isMonitoring
+                    ) {
+                        Text("Start Service")
+                    }
+
+                    Button(
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                        onClick = onStop,
+                        enabled = isMonitoring
+                    ) {
+                        Text("Stop Service")
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
