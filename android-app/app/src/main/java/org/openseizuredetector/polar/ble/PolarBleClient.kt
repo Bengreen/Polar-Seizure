@@ -426,6 +426,11 @@ class PolarBleClient(
     }
 
     private fun queryAvailableStreamsAndStart(deviceId: String) {
+        // Guard against duplicate callback executions during BLE GATT negotiation
+        if (accStreamDisposable != null || isPpgDutyCycleActive || ppgStreamDisposable != null) {
+            DiagnosticManager.log(LogLevel.INFO, "Streams already initializing or active for $deviceId. Skipping redundant query.")
+            return
+        }
         val queryDisposable = api.getAvailableOnlineStreamDataTypes(deviceId)
             .subscribe(
                 { availableTypes ->
@@ -767,6 +772,7 @@ class PolarBleClient(
         stopPpgDutyCycle()
         DiagnosticManager.log(LogLevel.INFO, "Starting adaptive PPG duty cycle (15s active every 2 mins)...")
         isPpgDutyCycleActive = true
+        dutyCycleStartTime = System.currentTimeMillis()
         DiagnosticManager.updateTelemetry { it.copy(isPpgDutyCycleActive = true) }
         startPpgStreaming(deviceId)
         handler.postDelayed(ppgDutyCycleRunnable, PPG_DUTY_ACTIVE_DURATION_MS)
@@ -786,6 +792,8 @@ class PolarBleClient(
             .subscribe(
                 { settings ->
                     DiagnosticManager.log(LogLevel.INFO, "Supported PPG settings for $deviceId: ${settings.settings}. Starting PPG stream...")
+                    val sampleRate = settings.settings[PolarSensorSetting.SettingType.SAMPLE_RATE]?.firstOrNull()?.toDouble() ?: 100.0
+                    pulseEngine.setSampleRate(sampleRate)
                     ppgStreamDisposable = api.startPpgStreaming(deviceId, settings)
                         .subscribe(
                             { ppgData -> onPpgDataReceived(ppgData) },
@@ -814,16 +822,22 @@ class PolarBleClient(
         val now = System.currentTimeMillis()
         var latestBpm: Int? = null
 
-        for (sample in ppgData.samples) {
+        val sampleCount = ppgData.samples.size
+        // 100 Hz = 10ms per sample; derive sample dt
+        val dtMs = if (sampleCount > 0) 10.0 else 10.0
+        val batchStartTime = now - ((sampleCount - 1) * dtMs).toLong()
+
+        for ((index, sample) in ppgData.samples.withIndex()) {
+            val sampleTimeMs = batchStartTime + (index * dtMs).toLong()
             // Polar 360 / Loop streams 2 green optical photodiode channels
             val firstChannel = sample.channelSamples.firstOrNull()?.toLong() ?: continue
             val secondChannel = sample.channelSamples.getOrNull(1)?.toLong() ?: firstChannel
-            val bpm = pulseEngine.processSample(firstChannel, now)
+            val bpm = pulseEngine.processSample(firstChannel, sampleTimeMs)
             if (bpm != null) {
                 latestBpm = bpm
             }
-            incidentRecorder.recordPpg(now, firstChannel, secondChannel, bpm)
-            dailyLogger.logPpg(now, firstChannel, secondChannel, bpm)
+            incidentRecorder.recordPpg(sampleTimeMs, firstChannel, secondChannel, bpm)
+            dailyLogger.logPpg(sampleTimeMs, firstChannel, secondChannel, bpm)
         }
 
         if (latestBpm != null && latestBpm > 0) {

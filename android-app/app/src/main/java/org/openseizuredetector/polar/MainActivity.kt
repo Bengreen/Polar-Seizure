@@ -58,7 +58,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.material3.Text
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -173,7 +177,8 @@ fun MainScreen(
     onTriggerPanic: () -> Unit
 ) {
     val context = LocalContext.current
-    var selectedTab by remember { mutableIntStateOf(0) }
+    val coroutineScope = rememberCoroutineScope()
+    val pagerState = rememberPagerState(initialPage = 0) { 4 }
     val discoveredDevices by DiagnosticManager.discoveredDevices.collectAsState()
     val telemetry by DiagnosticManager.telemetry.collectAsState()
     val isMonitoring = telemetry.isServiceRunning
@@ -275,60 +280,67 @@ fun MainScreen(
                 )
             }
 
-            // Top Tab Navigation
-            TabRow(selectedTabIndex = selectedTab) {
+            // Top Tab Navigation with Swipeable HorizontalPager
+            TabRow(selectedTabIndex = pagerState.currentPage) {
                 Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
+                    selected = pagerState.currentPage == 0,
+                    onClick = { coroutineScope.launch { pagerState.animateScrollToPage(0) } },
                     text = { Text("Dashboard") }
                 )
                 Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
+                    selected = pagerState.currentPage == 1,
+                    onClick = { coroutineScope.launch { pagerState.animateScrollToPage(1) } },
                     text = { Text("Carers & Alerts") }
                 )
                 Tab(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
+                    selected = pagerState.currentPage == 2,
+                    onClick = { coroutineScope.launch { pagerState.animateScrollToPage(2) } },
                     text = { Text("Devices (${discoveredDevices.size})") }
                 )
                 Tab(
-                    selected = selectedTab == 3,
-                    onClick = { selectedTab = 3 },
+                    selected = pagerState.currentPage == 3,
+                    onClick = { coroutineScope.launch { pagerState.animateScrollToPage(3) } },
                     text = { Text("Diagnostics & Logs") }
                 )
             }
 
-            when (selectedTab) {
-                0 -> DashboardView(
-                    telemetry = telemetry,
-                    onTriggerPanic = onTriggerPanic
-                )
-                1 -> CarerAlertsView(
-                    onTriggerTestAlert = onTriggerTestAlert,
-                    onTriggerPanic = onTriggerPanic
-                )
-                2 -> DevicesView(
-                    isMonitoring = isMonitoring,
-                    devices = discoveredDevices,
-                    connectedDeviceId = telemetry.connectedDeviceId,
-                    onStart = { checkAndStartService() },
-                    onStop = { onStopService() },
-                    onConnect = onConnectDevice,
-                    onDisconnect = onDisconnectDevice,
-                    onTriggerScan = onTriggerScan
-                )
-                3 -> DiagnosticsView(
-                    telemetry = telemetry,
-                    logs = logs,
-                    onCopyLogs = {
-                        val text = logs.joinToString("\n") { "[${it.timestamp}] [${it.level}] ${it.message}" }
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("Polar-Seizure Diagnostics", text))
-                        Toast.makeText(context, "Copied ${logs.size} log entries to clipboard", Toast.LENGTH_SHORT).show()
-                    },
-                    onClearLogs = { DiagnosticManager.clearLogs() }
-                )
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) { page ->
+                when (page) {
+                    0 -> DashboardView(
+                        telemetry = telemetry,
+                        onTriggerPanic = onTriggerPanic
+                    )
+                    1 -> CarerAlertsView(
+                        onTriggerTestAlert = onTriggerTestAlert,
+                        onTriggerPanic = onTriggerPanic
+                    )
+                    2 -> DevicesView(
+                        isMonitoring = isMonitoring,
+                        devices = discoveredDevices,
+                        connectedDeviceId = telemetry.connectedDeviceId,
+                        onStart = { checkAndStartService() },
+                        onStop = { onStopService() },
+                        onConnect = onConnectDevice,
+                        onDisconnect = onDisconnectDevice,
+                        onTriggerScan = onTriggerScan
+                    )
+                    3 -> DiagnosticsView(
+                        telemetry = telemetry,
+                        logs = logs,
+                        onCopyLogs = {
+                            val text = logs.joinToString("\n") { "[${it.timestamp}] [${it.level}] ${it.message}" }
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("Polar-Seizure Diagnostics", text))
+                            Toast.makeText(context, "Copied ${logs.size} log entries to clipboard", Toast.LENGTH_SHORT).show()
+                        },
+                        onClearLogs = { DiagnosticManager.clearLogs() }
+                    )
+                }
             }
         }
     }
@@ -565,7 +577,7 @@ fun DashboardView(
                             drawPath(pathX, color = Color(0xFFE53935), style = Stroke(width = 1.8f))
                             drawPath(pathY, color = Color(0xFF43A047), style = Stroke(width = 1.8f))
                             drawPath(pathZ, color = Color(0xFF1E88E5), style = Stroke(width = 1.8f))
-                            drawPath(pathEnergy, color = Color(0xFFFFD54F), style = Stroke(width = 2.5f))
+                            drawPath(pathEnergy, color = Color(0xFF4CAF50), style = Stroke(width = 2.5f))
                         }
                     } else {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -587,7 +599,7 @@ fun DashboardView(
                         Text(text = "● X", color = Color(0xFFE53935), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         Text(text = "● Y", color = Color(0xFF43A047), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         Text(text = "● Z", color = Color(0xFF1E88E5), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Text(text = "● 3-8Hz Energy", color = Color(0xFFFFD54F), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(text = "● 3-8Hz Energy", color = Color(0xFF4CAF50), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                     Text(
                         text = "-5m ⟵ Now",
