@@ -95,7 +95,8 @@ class MainActivity : ComponentActivity() {
                     onConnectDevice = { deviceId -> connectDevice(deviceId) },
                     onDisconnectDevice = { deviceId -> disconnectDevice(deviceId) },
                     onTriggerScan = { triggerScan() },
-                    onTriggerTestAlert = { triggerTestAlert() }
+                    onTriggerTestAlert = { triggerTestAlert() },
+                    onTriggerPanic = { triggerPanicAlert() }
                 )
             }
         }
@@ -152,6 +153,13 @@ class MainActivity : ComponentActivity() {
         }
         startService(intent)
     }
+
+    private fun triggerPanicAlert() {
+        val intent = Intent(this, PolarForegroundService::class.java).apply {
+            action = PolarForegroundService.ACTION_PANIC_ALERT
+        }
+        startService(intent)
+    }
 }
 
 @Composable
@@ -161,7 +169,8 @@ fun MainScreen(
     onConnectDevice: (String) -> Unit,
     onDisconnectDevice: (String) -> Unit,
     onTriggerScan: () -> Unit,
-    onTriggerTestAlert: () -> Unit
+    onTriggerTestAlert: () -> Unit,
+    onTriggerPanic: () -> Unit
 ) {
     val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -292,10 +301,12 @@ fun MainScreen(
 
             when (selectedTab) {
                 0 -> DashboardView(
-                    telemetry = telemetry
+                    telemetry = telemetry,
+                    onTriggerPanic = onTriggerPanic
                 )
                 1 -> CarerAlertsView(
-                    onTriggerTestAlert = onTriggerTestAlert
+                    onTriggerTestAlert = onTriggerTestAlert,
+                    onTriggerPanic = onTriggerPanic
                 )
                 2 -> DevicesView(
                     isMonitoring = isMonitoring,
@@ -325,7 +336,8 @@ fun MainScreen(
 
 @Composable
 fun DashboardView(
-    telemetry: LiveBleDiagnostics
+    telemetry: LiveBleDiagnostics,
+    onTriggerPanic: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -334,6 +346,18 @@ fun DashboardView(
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        // Quick Panic Button
+        Button(
+            onClick = onTriggerPanic,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp),
+            shape = RoundedCornerShape(10.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828))
+        ) {
+            Text("🆘 PANIC: Send Immediate Emergency SMS", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        }
+
         // Compact Status Strip: shows Connection status, Battery, and Stream state without bloated device info
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -705,7 +729,8 @@ fun DashboardView(
 
 @Composable
 fun CarerAlertsView(
-    onTriggerTestAlert: () -> Unit
+    onTriggerTestAlert: () -> Unit,
+    onTriggerPanic: () -> Unit
 ) {
     val context = LocalContext.current
     val carerManager = remember { CarerContactManager(context) }
@@ -905,31 +930,42 @@ fun CarerAlertsView(
             }
         }
 
-        // Test Alert Card
+        // Test Alert & Panic Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 Text(
-                    text = "Dispatch Test",
+                    text = "Emergency Triggers & Testing",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
-                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Dispatches a [TEST ALERT] SMS with the wearer's current HR, band battery %, and Google Maps GPS position to all active carers above.",
+                    text = "Dispatches SMS alerts with wearer vital signs, band & phone battery %, current 3-8Hz threshold, and live Google Maps GPS navigation pin.",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.Gray
                 )
-                Spacer(modifier = Modifier.height(12.dp))
+
                 Button(
+                    onClick = onTriggerPanic,
+                    enabled = contacts.isNotEmpty() && hasSms,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828))
+                ) {
+                    Text("🆘 PANIC: Send Immediate Emergency SMS", fontWeight = FontWeight.Bold)
+                }
+
+                OutlinedButton(
                     onClick = onTriggerTestAlert,
                     enabled = contacts.isNotEmpty() && hasSms,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Send Test Emergency SMS & Position Alert")
+                    Text("Send Routine [TEST ALERT] SMS")
                 }
             }
         }
