@@ -153,3 +153,29 @@ To achieve continuous battery longevity while capturing all forensic signal data
 1. **Low-Power Intermittent Pulse Sampling:** During routine resting states, optical LEDs duty-cycle on for 15s every 2–5 minutes.
 2. **ACC-Triggered Escalation:** The instant movement power $\text{Power}_{\text{ROI}}$ or acceleration variance rises, the optical PPG stream escalates to maximum sampling frequency (22 Hz / 50 Hz).
 3. **Forensic Ring Buffer Retention:** The daemon retains a rolling 60-second FIFO buffer of raw uncompressed ACC and PPG samples in memory. On alarm or suspect trigger, the pre-incident window plus the active event and recovery period are persisted to disk and bundled for carer/neurologist review.
+
+---
+
+## 7. Candidate DSP & Sensory Fusion Enhancements [Tentative for Discussion]
+
+### 7.1 Nocturnal Detection Mode (Circadian Auto-Sensitivity) (Tentative for Discussion)
+* **Clinical Context:** The risk of Sudden Unexpected Death in Epilepsy (SUDEP) and unobserved asphyxiation peaks during nocturnal sleep. Conversely, voluntary motor agitation is minimal during sleep.
+* **Proposed Mechanism:**
+  1. **Configurable Sleep Schedule:** User sets bedtime hours (e.g. 22:30 to 07:00) or system infers rest based on sustained $>30\text{m}$ stillness and diminished heart rate baseline.
+  2. **Heightened Sensitivity Tuning:**
+     * Lower `AlarmThresh` from standard daytime threshold (e.g. $0.15 \to 0.08$) to detect subtle or low-amplitude clonic jerks.
+     * Lower spectral ratio gate from $50\% \to 40\%$ if accompanied by sudden optical heart rate spikes ($>25\text{ BPM}$ acceleration within 10 seconds).
+     * Tighten consecutive window validation from 3 windows to 2 windows ($\sim 10\text{s}$) to alert carers earlier in the event.
+
+### 7.2 High-G Fall Detection (Impact + Inactivity) (Tentative for Discussion)
+* **Clinical Context:** Atonic seizures ("drop attacks"), tonic stiffening, and severe myoclonic jerks often cause abrupt falls resulting in physical injury, without rhythmic clonic oscillations.
+* **Proposed Algorithm:**
+  1. **Impact Detection:** Continuously monitor instantaneous acceleration magnitude vector $\|a\| = \sqrt{x^2 + y^2 + z^2}$. An impact is flagged if $\|a\| > 3.5g$ within a 100ms window.
+  2. **Post-Impact Inactivity Window:** Following an impact event, initiate a 10–15 second immobility observation window.
+  3. **Classification & Escalation:** If the wearer remains completely motionless ($\text{Var}(\|a\|) < 0.02g$) for $>10\text{ seconds}$ post-impact, flag a `FALL_DETECTED` emergency event and escalate to carers with GPS coordinates.
+
+### 7.3 Optical Off-Wrist / Detached Classification (Tentative for Discussion)
+* **Clinical Context:** Distinguishing whether the sensor has been taken off versus telemetry failure or severe bradycardia prevents false deadman alarms.
+* **Proposed Logic:**
+  1. When raw optical PPG DC photodiode amplitude falls below minimum ambient reflection thresholds concurrent with an acceleration variance near zero ($\text{Var} < 0.005g$), classify device state as `OFF_WRIST`.
+  2. Suppress false seizure detection and initiate a gentle prompt: *"Wearable appears removed. Monitoring paused."*
