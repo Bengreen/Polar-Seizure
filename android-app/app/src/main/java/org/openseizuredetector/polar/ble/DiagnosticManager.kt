@@ -47,6 +47,7 @@ data class LiveBleDiagnostics(
     val connectedDeviceId: String? = null,
     val connectedDeviceName: String? = null,
     val batteryLevel: Int? = null,
+    val batteryRemainingHoursEstimate: Double? = null,
     val heartRateBpm: Int? = null,
     val isStreamingAcc: Boolean = false,
     val isStreamingHr: Boolean = false,
