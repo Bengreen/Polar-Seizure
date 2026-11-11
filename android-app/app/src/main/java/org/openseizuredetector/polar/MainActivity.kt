@@ -494,7 +494,7 @@ fun DashboardView(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(text = "X: %+.2fg".format(telemetry.lastAccX), fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = Color(0xFFE53935))
-                    Text(text = "Y: %+.2fg".format(telemetry.lastAccY), fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = Color(0xFF43A047))
+                    Text(text = "Y: %+.2fg".format(telemetry.lastAccY), fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = Color(0xFFFF9800))
                     Text(text = "Z: %+.2fg".format(telemetry.lastAccZ), fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = Color(0xFF1E88E5))
                     Text(text = "|a|: %.2fg".format(telemetry.lastMagnitude), fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
@@ -575,7 +575,7 @@ fun DashboardView(
                             }
 
                             drawPath(pathX, color = Color(0xFFE53935), style = Stroke(width = 1.8f))
-                            drawPath(pathY, color = Color(0xFF43A047), style = Stroke(width = 1.8f))
+                            drawPath(pathY, color = Color(0xFFFF9800), style = Stroke(width = 1.8f))
                             drawPath(pathZ, color = Color(0xFF1E88E5), style = Stroke(width = 1.8f))
                             drawPath(pathEnergy, color = Color(0xFF4CAF50), style = Stroke(width = 2.5f))
                         }
@@ -597,7 +597,7 @@ fun DashboardView(
                 ) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(text = "● X", color = Color(0xFFE53935), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Text(text = "● Y", color = Color(0xFF43A047), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(text = "● Y", color = Color(0xFFFF9800), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         Text(text = "● Z", color = Color(0xFF1E88E5), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         Text(text = "● 3-8Hz Energy", color = Color(0xFF4CAF50), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
