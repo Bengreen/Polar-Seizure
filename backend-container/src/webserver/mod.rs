@@ -13,6 +13,9 @@ pub mod telemetry;
 pub mod users;
 pub mod watchdog;
 
+#[cfg(test)]
+mod tests;
+
 use axum::{
     Json, Router,
     routing::{get, post},
@@ -58,6 +61,22 @@ pub fn app_router(state: AppState) -> Router {
         .route(
             "/api/v1/telemetry/frame",
             post(telemetry::ingest_telemetry_frame),
+        )
+        .route(
+            "/api/v1/telemetry/bulk",
+            post(telemetry::ingest_bulk_telemetry),
+        )
+        .route(
+            "/api/v1/telemetry/emergency",
+            post(telemetry::ingest_bulk_telemetry),
+        )
+        .route(
+            "/api/v1/telemetry/config",
+            get(telemetry::get_user_sync_config).put(telemetry::update_user_sync_config),
+        )
+        .route(
+            "/api/v1/telemetry/users/{user_id}/live",
+            get(telemetry::get_user_live_telemetry),
         )
         .route(
             "/api/v1/telemetry/{device_id}",

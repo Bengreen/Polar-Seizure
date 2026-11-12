@@ -112,8 +112,10 @@ async fn test_app_router_hello() {
 
     assert_eq!(response.status(), StatusCode::OK);
     let body = response.into_body().collect().await.unwrap().to_bytes();
-    let body_str = String::from_utf8(body.to_vec()).unwrap();
-    assert_eq!(body_str, r#"{"message":"hello"}"#);
+    let body_json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body_json["service"], "polar-seizure-backend");
+    assert_eq!(body_json["status"], "operational");
+    assert_eq!(body_json["shortcode"], "ps");
 }
 
 // References more than 3 PRDs
@@ -293,100 +295,37 @@ async fn test_cors_headers_present() {
     assert!(methods.contains("POST"));
 }
 
-// References more than 3 PRDs
+// PRD Reference: 0005
 #[tokio::test]
-async fn test_get_farm_route_exists() {
+async fn test_telemetry_frame_route_exists() {
     let state = get_test_state();
     let app = app_router(state);
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/v0/farms/999")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    // The route should exist, so it should not return NOT_FOUND (404)
-    // It might return INTERNAL_SERVER_ERROR (500) if database isn't fully mocked/accessible,
-    // or NOT_FOUND if it queried the DB successfully but ID 999 doesn't exist.
-    assert_ne!(response.status(), StatusCode::NOT_FOUND);
-}
-
-// References more than 3 PRDs
-#[tokio::test]
-async fn test_put_farm_route_exists() {
-    let state = get_test_state();
-    let app = app_router(state);
-
-    let farm_json = serde_json::json!({
-        "name": "Updated Farm Name",
-        "location": "Updated Location"
+    let frame = serde_json::json!({
+        "device_id": "polar-sense-01",
+        "patient_id": "patient-42",
+        "timestamp": "2026-11-12T20:00:00Z",
+        "heart_rate": 80,
+        "battery_percent": 95,
+        "fft_ratio": 0.25,
+        "max_power_freq": 2.1,
+        "state": "NORMAL",
+        "acc_sample_count": 50
     });
 
     let response = app
         .oneshot(
             Request::builder()
-                .method("PUT")
-                .uri("/v0/farms/999")
+                .method("POST")
+                .uri("/api/v1/telemetry/frame")
                 .header("Content-Type", "application/json")
-                .body(Body::from(farm_json.to_string()))
+                .body(Body::from(frame.to_string()))
                 .unwrap(),
         )
         .await
         .unwrap();
 
-    assert_ne!(response.status(), StatusCode::NOT_FOUND);
-}
-
-// References more than 3 PRDs
-#[tokio::test]
-async fn test_put_field_route_exists() {
-    let state = get_test_state();
-    let app = app_router(state);
-
-    let field_json = serde_json::json!({
-        "farm_id": 1,
-        "name": "Updated Field Name",
-        "area_hectares": 12.5,
-        "land_use": "arable"
-    });
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("PUT")
-                .uri("/v0/fields/999")
-                .header("Content-Type", "application/json")
-                .body(Body::from(field_json.to_string()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_ne!(response.status(), StatusCode::NOT_FOUND);
-}
-
-// References more than 3 PRDs
-#[tokio::test]
-async fn test_delete_event_route_exists() {
-    let state = get_test_state();
-    let app = app_router(state);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("DELETE")
-                .uri("/v0/events/999")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_ne!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
 }
 
 // References more than 3 PRDs
@@ -668,4 +607,222 @@ async fn test_create_user_conflict_returns_error() {
 
     // Route executes database query without ON CONFLICT clause
     assert_eq!(res1.status(), StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
+async fn test_telemetry_bulk_ingest_and_deduplication() {
+    let state = get_test_state();
+    let app = app_router(state.clone());
+    let token = generate_test_jwt(&state, 42, "user");
+
+    // 1. Initial bulk upload with 2 samples
+    let bulk_payload = serde_json::json!({
+        "device_id": "polar-sense-c342",
+        "batch_id": "00000000-0000-0000-0000-000000000101",
+        "is_emergency": false,
+        "samples": [
+            {
+                "sample_type": "dsp",
+                "timestamp_ms": 1700000000000i64,
+                "heart_rate": 78.5,
+                "energy_ratio": 0.45,
+                "band_power": 12.3,
+                "total_power": 27.3,
+                "state": "OK"
+            },
+            {
+                "sample_type": "acc",
+                "timestamp_ms": 1700000001000i64,
+                "x": 0.1,
+                "y": 0.9,
+                "z": 0.05,
+                "magnitude": 0.91
+            }
+        ]
+    });
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/telemetry/bulk")
+                .header("Authorization", format!("Bearer {}", token))
+                .header("Content-Type", "application/json")
+                .body(Body::from(bulk_payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let status = res.status();
+    let body_bytes = res.into_body().collect().await.unwrap().to_bytes();
+    if status != StatusCode::OK {
+        eprintln!(
+            "Bulk upload failed: status={} body={}",
+            status,
+            String::from_utf8_lossy(&body_bytes)
+        );
+    }
+    assert_eq!(status, StatusCode::OK);
+    let resp: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(resp["total_received"], 2);
+    assert_eq!(resp["ingested_count"], 2);
+    assert_eq!(resp["deduplicated_count"], 0);
+    assert_eq!(resp["sync_config"]["next_upload_in_seconds"], 300);
+
+    // 2. Emergency fast-path upload sending overlapping sample + 1 new emergency sample
+    let emergency_payload = serde_json::json!({
+        "device_id": "polar-sense-c342",
+        "batch_id": "00000000-0000-0000-0000-000000000102",
+        "is_emergency": true,
+        "emergency_type": "seizure_detected",
+        "samples": [
+            // Duplicate of previously sent sample
+            {
+                "sample_type": "dsp",
+                "timestamp_ms": 1700000000000i64,
+                "heart_rate": 78.5,
+                "energy_ratio": 0.45,
+                "band_power": 12.3,
+                "total_power": 27.3,
+                "state": "OK"
+            },
+            // New emergency sample
+            {
+                "sample_type": "dsp",
+                "timestamp_ms": 1700000002000i64,
+                "heart_rate": 145.0,
+                "energy_ratio": 0.88,
+                "band_power": 85.0,
+                "total_power": 96.0,
+                "state": "ALARM"
+            }
+        ]
+    });
+
+    let res2 = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/telemetry/emergency")
+                .header("Authorization", format!("Bearer {}", token))
+                .header("Content-Type", "application/json")
+                .body(Body::from(emergency_payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(res2.status(), StatusCode::OK);
+    let body_bytes2 = res2.into_body().collect().await.unwrap().to_bytes();
+    let resp2: serde_json::Value = serde_json::from_slice(&body_bytes2).unwrap();
+    assert_eq!(resp2["total_received"], 2);
+    assert_eq!(resp2["ingested_count"], 1);
+    assert_eq!(resp2["deduplicated_count"], 1);
+
+    // 3. Query live telemetry for SPA dashboard
+    let res3 = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/v1/telemetry/users/42/live?limit=10")
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(res3.status(), StatusCode::OK);
+    let body_bytes3 = res3.into_body().collect().await.unwrap().to_bytes();
+    let samples: Vec<serde_json::Value> = serde_json::from_slice(&body_bytes3).unwrap();
+    assert_eq!(samples.len(), 3);
+    assert_eq!(samples[2]["alarm_state"], "ALARM");
+    assert_eq!(samples[2]["is_emergency"], true);
+}
+
+#[tokio::test]
+async fn test_dynamic_telemetry_sync_config() {
+    let state = get_test_state();
+    let app = app_router(state.clone());
+    let token = generate_test_jwt(&state, 77, "user");
+
+    // 1. Get default sync config
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/v1/telemetry/config")
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::OK);
+    let body_bytes = res.into_body().collect().await.unwrap().to_bytes();
+    let cfg: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(cfg["user_id"], 77);
+    assert_eq!(cfg["bulk_upload_interval_seconds"], 300);
+    assert_eq!(cfg["emergency_pre_event_window_seconds"], 120);
+
+    // 2. Update cadence to 60 seconds (e.g. for high-risk monitoring period)
+    let update_payload = serde_json::json!({
+        "user_id": 77,
+        "bulk_upload_interval_seconds": 60,
+        "emergency_pre_event_window_seconds": 180,
+        "emergency_post_event_window_seconds": 90,
+        "compress_uploads": true,
+        "allow_cellular_bulk": false,
+        "updated_at": "2026-11-12T20:00:00Z"
+    });
+
+    let res2 = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/v1/telemetry/config")
+                .header("Authorization", format!("Bearer {}", token))
+                .header("Content-Type", "application/json")
+                .body(Body::from(update_payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(res2.status(), StatusCode::OK);
+
+    // 3. Bulk upload should now return updated dynamic sync instruction
+    let bulk_payload = serde_json::json!({
+        "device_id": "polar-verity-77",
+        "batch_id": "00000000-0000-0000-0000-000000000077",
+        "is_emergency": false,
+        "samples": []
+    });
+
+    let res3 = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/telemetry/bulk")
+                .header("Authorization", format!("Bearer {}", token))
+                .header("Content-Type", "application/json")
+                .body(Body::from(bulk_payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(res3.status(), StatusCode::OK);
+    let body_bytes3 = res3.into_body().collect().await.unwrap().to_bytes();
+    let resp3: serde_json::Value = serde_json::from_slice(&body_bytes3).unwrap();
+    assert_eq!(resp3["sync_config"]["next_upload_in_seconds"], 60);
+    assert_eq!(resp3["sync_config"]["emergency_pre_window_seconds"], 180);
 }
