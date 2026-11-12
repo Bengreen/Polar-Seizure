@@ -13,6 +13,7 @@ import java.util.UUID
 import org.openseizuredetector.polar.dsp.HighGFallDetector
 import org.openseizuredetector.polar.dsp.OpticalPulseEngine
 import org.openseizuredetector.polar.dsp.SeizureFftEngine
+import org.openseizuredetector.polar.dsp.WatchTapDetector
 import org.openseizuredetector.polar.incident.DailyTelemetryLogger
 import org.openseizuredetector.polar.incident.IncidentDataRecorder
 import org.openseizuredetector.polar.model.SeizureAlarmState
@@ -20,7 +21,8 @@ import org.openseizuredetector.polar.model.SeizureAlarmState
 class PolarBleClient(
     private val context: Context,
     private val onAlarmStateChanged: (SeizureAlarmState) -> Unit,
-    private val onHighGFallDetected: () -> Unit = {}
+    private val onHighGFallDetected: () -> Unit = {},
+    private val onWatchTripleTapDetected: () -> Unit = {}
 ) {
     private val disposables = CompositeDisposable()
     private var scanDisposable: Disposable? = null
@@ -31,6 +33,7 @@ class PolarBleClient(
 
     private val fftEngine = SeizureFftEngine()
     private val fallDetector = HighGFallDetector()
+    private val tapDetector = WatchTapDetector()
     private val pulseEngine = OpticalPulseEngine()
     val incidentRecorder = IncidentDataRecorder(context)
     val dailyLogger = DailyTelemetryLogger(context)
@@ -565,6 +568,13 @@ class PolarBleClient(
             if (fallConfirmed) {
                 DiagnosticManager.log(LogLevel.WARN, "High-G Fall impact and stillness confirmed (${String.format(java.util.Locale.US, "%.1fg", fallDetector.getPeakImpactG())})")
                 onHighGFallDetected()
+            }
+
+            // Wearer Triple-Tap Panic gesture detection on watch casing
+            val tripleTapConfirmed = tapDetector.addSample(now, gx, gy, gz)
+            if (tripleTapConfirmed) {
+                DiagnosticManager.log(LogLevel.WARN, "Deliberate Watch Triple-Tap detected! Triggering immediate wearer panic alert.")
+                onWatchTripleTapDetected()
             }
 
             val magnitude = Math.sqrt(gx * gx + gy * gy + gz * gz) - 1.0
