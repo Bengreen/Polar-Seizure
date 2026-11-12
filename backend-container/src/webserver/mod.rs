@@ -89,6 +89,10 @@ pub fn app_router(state: AppState) -> Router {
         .route("/api/v1/alerts/trigger", post(alerts::trigger_alert))
         .route("/api/v1/alerts/active", get(alerts::list_active_alerts))
         .route(
+            "/api/v1/alerts/users/{user_id}/incidents",
+            get(alerts::list_user_incidents),
+        )
+        .route(
             "/api/v1/alerts/{alert_id}/acknowledge",
             post(alerts::acknowledge_alert),
         );

@@ -70,18 +70,44 @@ pub struct WatchdogHeartbeat {
     pub service_status: String,
 }
 
-/// Emergency alert record.
+/// Emergency alert and SMS trigger incident record.
 #[derive(Serialize, Deserialize, Clone, Debug, FromRow)]
-pub struct AlertRecord {
+pub struct AlertIncident {
     pub id: Uuid,
+    pub user_id: i64,
     pub device_id: String,
-    pub patient_id: String,
-    pub alert_type: String,
+    pub alert_type: String, // "PANIC", "SEIZURE", "HIGH_G", "DEADMAN", "TEST"
+    #[serde(default = "default_severity")]
     pub severity: String,
+    #[serde(default = "default_source")]
+    pub trigger_source: String, // "ON_DEVICE", "WATCH_TRIPLE_TAP", "MANUAL_PANIC", "FALL_DETECTOR"
+
+    pub heart_rate_bpm: Option<f32>,
+    pub energy_ratio_pct: Option<f32>,
+    pub seizure_band_power: Option<f32>,
+
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub location_accuracy_meters: Option<f32>,
+    pub maps_url: Option<String>,
+
+    pub sms_dispatched: bool,
+    pub sms_recipient_count: i32,
+    pub sms_recipients: Option<serde_json::Value>,
+    pub sms_body: Option<String>,
+
     pub triggered_at: DateTime<Utc>,
     pub acknowledged_at: Option<DateTime<Utc>>,
     pub acknowledged_by: Option<String>,
     pub details: Option<serde_json::Value>,
+}
+
+fn default_severity() -> String {
+    "CRITICAL".to_string()
+}
+
+fn default_source() -> String {
+    "ON_DEVICE".to_string()
 }
 
 /// Dynamic telemetry configuration for a user.

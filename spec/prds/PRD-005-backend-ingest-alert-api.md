@@ -69,10 +69,33 @@ When implemented in Phase 2, the `backend-container` will serve as a lightweight
     }
     ```
 
-### 2.2 Alert Dispatch & Incident Lifecycle
+### 2.2 Alert Dispatch, SMS Incident Logging & Incident Lifecycle
 * **`POST /api/v1/alerts/trigger`**
-  * Dispatches alert payload when `android-app` confirms seizure threshold.
-  * Initiates Twilio SMS and push alerts to registered emergency contacts.
+  * Dispatches alert payload when `android-app` confirms seizure threshold or logs an on-device SMS dispatch event.
+  * Records SMS dispatch metadata: `sms_dispatched` (boolean), `sms_recipient_count` (int), `sms_recipients` (list of recipient numbers/names), and `sms_body` (full text sent to carers).
+  * Records vital biometric snapshots at trigger moment (heart rate in BPM, 3–8 Hz seizure power, energy ratio) and GPS location fix (lat, lon, accuracy, maps URL).
+  * Payload:
+    ```json
+    {
+      "device_id": "polar-sense-c342",
+      "alert_type": "PANIC",
+      "severity": "CRITICAL",
+      "trigger_source": "WATCH_TRIPLE_TAP",
+      "heart_rate_bpm": 128.5,
+      "energy_ratio_pct": 82.4,
+      "seizure_band_power": 64.2,
+      "latitude": 51.5074,
+      "longitude": -0.1278,
+      "location_accuracy_meters": 4.5,
+      "maps_url": "https://maps.google.com/?q=51.5074,-0.1278",
+      "sms_dispatched": true,
+      "sms_recipient_count": 2,
+      "sms_recipients": [{"name": "Carer One", "phone": "+447123456789"}],
+      "sms_body": "[POLAR-SEIZURE PANIC] Patient: Alice | Time: 21:40:00 | HR: 128.5 bpm | Location: https://maps.google.com/?q=51.5074,-0.1278 (±4m)"
+    }
+    ```
+* **`GET /api/v1/alerts/users/:user_id/incidents`**
+  * Retrieves all past emergency incidents and SMS dispatch logs for a user/patient.
 * **`POST /api/v1/alerts/:alertId/acknowledge`**
   * Called by carer from web portal to acknowledge and silence escalation.
 * **`GET /api/v1/alerts/active`**

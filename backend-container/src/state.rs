@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::config::AppConfig;
-use crate::models::{AlertRecord, TelemetryFrame};
+use crate::models::{AlertIncident, TelemetryFrame};
 
 /// Thread-safe shared application state passed to HTTP handlers via Axum extractors.
 #[derive(Clone)]
@@ -25,8 +25,8 @@ pub struct AppState {
     /// Thread-safe in-memory user telemetry sync configuration cache (user_id -> UserTelemetryConfig).
     pub user_sync_configs:
         Arc<RwLock<std::collections::HashMap<i64, crate::models::UserTelemetryConfig>>>,
-    /// Thread-safe list of active emergency alerts.
-    pub active_alerts: Arc<RwLock<Vec<AlertRecord>>>,
+    /// Thread-safe list of active emergency alert incidents.
+    pub active_alerts: Arc<RwLock<Vec<AlertIncident>>>,
     /// Optional dev-mode RS256 keypair for signing local JWT tokens.
     pub dev_jwt_keypair: Option<Arc<RS256KeyPair>>,
     /// Optional dev-mode JWKS JSON response string.
