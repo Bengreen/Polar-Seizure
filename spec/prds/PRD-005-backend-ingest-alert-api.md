@@ -20,6 +20,7 @@ When implemented in Phase 2, the `backend-container` will serve as a lightweight
 
 ### 2.1 Telemetry & Heartbeat Ingestion
 * **`POST /api/v1/telemetry/frame`**
+  * Ingests a single real-time telemetry frame.
   * Payload:
     ```json
     {
@@ -34,6 +35,28 @@ When implemented in Phase 2, the `backend-container` will serve as a lightweight
       "accSampleCount": 128
     }
     ```
+* **`POST /api/v1/telemetry/bulk` & `POST /api/v1/telemetry/emergency`**
+  * Ingests batched or emergency fast-path telemetry uploads.
+  * In emergency events (seizure alarm, watch triple-tap panic, high-G fall), the client immediately uploads the most recent $M$ seconds (default: 120s) of raw/DSP samples.
+  * Features compound de-duplication: samples are keyed by `(user_id, device_id, sample_type, timestamp_ms)` ensuring zero duplicated data points if emergency dumps overlap with scheduled bulk uploads.
+  * Returns dynamic synchronization instructions in response:
+    ```json
+    {
+      "status": "success",
+      "batch_id": "00000000-0000-0000-0000-000000000101",
+      "total_received": 120,
+      "ingested_count": 118,
+      "deduplicated_count": 2,
+      "sync_config": {
+        "next_upload_in_seconds": 300,
+        "emergency_pre_window_seconds": 120
+      }
+    }
+    ```
+* **`GET /api/v1/telemetry/config` & `PUT /api/v1/telemetry/config`**
+  * Retrieves and dynamically updates per-user bulk synchronization intervals (`bulk_upload_interval_seconds`, `emergency_pre_event_window_seconds`, `allow_cellular_bulk`).
+* **`GET /api/v1/telemetry/users/:user_id/live?since_ms=...&limit=...`**
+  * Time-series data retrieval endpoint for Single Page Application (SPA) web portal visualization with role-based access control (patients view their own, carers/support/admin can view assigned patients).
 * **`POST /api/v1/watchdog/heartbeat`**
   * Payload:
     ```json

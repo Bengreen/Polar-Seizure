@@ -19,6 +19,12 @@ pub struct AppState {
     pub db_pool: sqlx::PgPool,
     /// Thread-safe in-memory cache of recent telemetry frames indexed by device ID.
     pub telemetry_cache: Arc<RwLock<std::collections::HashMap<String, Vec<TelemetryFrame>>>>,
+    /// Thread-safe in-memory cache of recent multi-user samples for live SPA visualization (user_id -> samples).
+    pub live_user_samples:
+        Arc<RwLock<std::collections::HashMap<i64, Vec<crate::models::StoredTelemetrySample>>>>,
+    /// Thread-safe in-memory user telemetry sync configuration cache (user_id -> UserTelemetryConfig).
+    pub user_sync_configs:
+        Arc<RwLock<std::collections::HashMap<i64, crate::models::UserTelemetryConfig>>>,
     /// Thread-safe list of active emergency alerts.
     pub active_alerts: Arc<RwLock<Vec<AlertRecord>>>,
     /// Optional dev-mode RS256 keypair for signing local JWT tokens.
@@ -41,6 +47,8 @@ impl AppState {
             prometheus_handle: Arc::new(prometheus_handle),
             db_pool,
             telemetry_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            live_user_samples: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            user_sync_configs: Arc::new(RwLock::new(std::collections::HashMap::new())),
             active_alerts: Arc::new(RwLock::new(Vec::new())),
             dev_jwt_keypair,
             dev_jwks_json,
