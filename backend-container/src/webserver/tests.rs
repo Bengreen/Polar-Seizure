@@ -826,3 +826,99 @@ async fn test_dynamic_telemetry_sync_config() {
     assert_eq!(resp3["sync_config"]["next_upload_in_seconds"], 60);
     assert_eq!(resp3["sync_config"]["emergency_pre_window_seconds"], 180);
 }
+
+#[tokio::test]
+async fn test_alert_sms_incident_upload_and_query() {
+    let state = get_test_state();
+    let app = app_router(state.clone());
+    let token = generate_test_jwt(&state, 88, "user");
+
+    // 1. Upload an SMS trigger incident event
+    let incident_payload = serde_json::json!({
+        "device_id": "polar-sense-watch-01",
+        "alert_type": "PANIC",
+        "severity": "CRITICAL",
+        "trigger_source": "WATCH_TRIPLE_TAP",
+        "heart_rate_bpm": 132.5,
+        "energy_ratio_pct": 74.0,
+        "seizure_band_power": 45.2,
+        "latitude": 51.5074,
+        "longitude": -0.1278,
+        "location_accuracy_meters": 5.0,
+        "maps_url": "https://maps.google.com/?q=51.5074,-0.1278",
+        "sms_dispatched": true,
+        "sms_recipient_count": 2,
+        "sms_recipients": [
+            {"name": "Alice Carer", "phone": "+447111111111"},
+            {"name": "Bob Carer", "phone": "+447222222222"}
+        ],
+        "sms_body": "[POLAR-SEIZURE PANIC] Patient: Test User | Time: 21:40:00 | HR: 132.5 bpm | Location: https://maps.google.com/?q=51.5074,-0.1278 (±5m)"
+    });
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/alerts/trigger")
+                .header("Authorization", format!("Bearer {}", token))
+                .header("Content-Type", "application/json")
+                .body(Body::from(incident_payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::OK);
+    let body_bytes = res.into_body().collect().await.unwrap().to_bytes();
+    let incident: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(incident["alert_type"], "PANIC");
+    assert_eq!(incident["sms_dispatched"], true);
+    assert_eq!(incident["sms_recipient_count"], 2);
+    assert_eq!(incident["heart_rate_bpm"], 132.5);
+    assert_eq!(incident["trigger_source"], "WATCH_TRIPLE_TAP");
+    let alert_id = incident["id"].as_str().unwrap();
+
+    // 2. Query incidents for this user
+    let res2 = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/v1/alerts/users/88/incidents")
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(res2.status(), StatusCode::OK);
+    let body_bytes2 = res2.into_body().collect().await.unwrap().to_bytes();
+    let incidents: Vec<serde_json::Value> = serde_json::from_slice(&body_bytes2).unwrap();
+    assert_eq!(incidents.len(), 1);
+    assert_eq!(incidents[0]["id"], alert_id);
+    assert_eq!(incidents[0]["sms_dispatched"], true);
+    assert_eq!(incidents[0]["heart_rate_bpm"], 132.5);
+
+    // 3. Acknowledge alert
+    let ack_payload = serde_json::json!({
+        "carer_name": "Alice Carer"
+    });
+
+    let res3 = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/v1/alerts/{}/acknowledge", alert_id))
+                .header("Authorization", format!("Bearer {}", token))
+                .header("Content-Type", "application/json")
+                .body(Body::from(ack_payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(res3.status(), StatusCode::OK);
+}
