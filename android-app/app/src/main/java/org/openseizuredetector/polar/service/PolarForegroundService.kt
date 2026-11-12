@@ -89,6 +89,11 @@ class PolarForegroundService : Service() {
                 onHighGFallDetected = {
                     DiagnosticManager.log(LogLevel.WARN, "High-G Fall impact detected. Initiating countdown escalation.")
                     initiateEscalationWithCountdown(EmergencyAlertType.HIGH_G)
+                },
+                onWatchTripleTapDetected = {
+                    DiagnosticManager.log(LogLevel.WARN, "Watch Triple-Tap Panic detected! Bypassing countdown and dispatching immediately.")
+                    cancelPendingAlert("Watch Triple-Tap Panic override")
+                    executeSmsDispatch(EmergencyAlertType.PANIC)
                 }
             )
         }
