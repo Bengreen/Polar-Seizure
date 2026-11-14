@@ -33,6 +33,16 @@ data class IncidentFileInfo(
 )
 
 /**
+ * Detailed telemetry container parsed on-demand for a single incident.
+ */
+data class IncidentTelemetryDetail(
+    val incidentId: String,
+    val savedAt: Long,
+    val accSamples: List<AccelSampleRecord>,
+    val ppgSamples: List<PpgSampleRecord>
+)
+
+/**
  * IncidentDataRecorder maintains rolling circular ring buffers of raw ACC and PPG telemetry.
  * When a suspect movement event or seizure alarm occurs, it flushes pre-incident history
  * and continuous high-rate telemetry to disk.
@@ -82,7 +92,7 @@ class IncidentDataRecorder(private val context: Context) {
     }
 
     @Synchronized
-    fun onIncidentEscalationTriggered(reason: String) {
+    fun onIncidentEscalationTriggered(reason: String): String {
         if (!isRecordingActiveIncident) {
             isRecordingActiveIncident = true
             currentIncidentId = "incident_${DATE_FORMAT.format(Date())}"
@@ -94,6 +104,7 @@ class IncidentDataRecorder(private val context: Context) {
             activeIncidentAccSamples = accRingBuffer.toMutableList()
             activeIncidentPpgSamples = ppgRingBuffer.toMutableList()
         }
+        return currentIncidentId ?: "incident_${DATE_FORMAT.format(Date())}"
     }
 
     @Synchronized
@@ -149,30 +160,94 @@ class IncidentDataRecorder(private val context: Context) {
 
     fun isRecording(): Boolean = isRecordingActiveIncident
 
+    /**
+     * Fast non-blocking listing of incidents.
+     * CRITICAL: Reads only the first few bytes (header) of each file or derives from filename and length.
+     * NEVER reads the entire multi-megabyte JSON file into memory during listing!
+     */
     @Synchronized
     fun listRecordedIncidents(): List<IncidentFileInfo> {
         val dir = File(context.filesDir, "incidents")
         if (!dir.exists()) return emptyList()
         val files = dir.listFiles { f -> f.extension == "json" } ?: return emptyList()
-        return files.mapNotNull { f ->
+        return files.map { f ->
+            // Fast derivation without parsing full JSON payload
+            val incidentId = f.nameWithoutExtension
+            val savedAt = f.lastModified()
+            val sizeBytes = f.length()
+            // Estimate sample counts from file size if header read not needed, or read first 1KB
+            var accCount = 0
+            var ppgCount = 0
             try {
-                val text = f.readText()
-                val idMatch = "\"incidentId\":\\s*\"([^\"]+)\"".toRegex().find(text)?.groupValues?.get(1) ?: f.nameWithoutExtension
-                val savedAtMatch = "\"savedAt\":\\s*(\\d+)".toRegex().find(text)?.groupValues?.get(1)?.toLongOrNull() ?: f.lastModified()
-                val accCount = "\"accSampleCount\":\\s*(\\d+)".toRegex().find(text)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-                val ppgCount = "\"ppgSampleCount\":\\s*(\\d+)".toRegex().find(text)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-                IncidentFileInfo(
-                    file = f,
-                    incidentId = idMatch,
-                    savedAt = savedAtMatch,
-                    sizeBytes = f.length(),
-                    accSampleCount = accCount,
-                    ppgSampleCount = ppgCount
-                )
-            } catch (e: Exception) {
-                null
+                // Read just the first 1KB to extract counts
+                val headerBuffer = ByteArray(1024)
+                f.inputStream().use { stream ->
+                    val readBytes = stream.read(headerBuffer)
+                    if (readBytes > 0) {
+                        val header = String(headerBuffer, 0, readBytes, Charsets.UTF_8)
+                        accCount = "\"accSampleCount\":\\s*(\\d+)".toRegex().find(header)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                        ppgCount = "\"ppgSampleCount\":\\s*(\\d+)".toRegex().find(header)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                    }
+                }
+            } catch (_: Exception) {
+                // Fallback to size estimation
+                accCount = (sizeBytes / 70).toInt()
+                ppgCount = (sizeBytes / 180).toInt()
             }
+
+            IncidentFileInfo(
+                file = f,
+                incidentId = incidentId,
+                savedAt = savedAt,
+                sizeBytes = sizeBytes,
+                accSampleCount = accCount,
+                ppgSampleCount = ppgCount
+            )
         }.sortedByDescending { it.savedAt }
+    }
+
+    /**
+     * Asynchronously / On-demand loads and parses full incident details for the telemetry viewer.
+     */
+    fun loadIncidentDetail(file: File): IncidentTelemetryDetail? {
+        if (!file.exists()) return null
+        return try {
+            val text = file.readText()
+            val incidentId = "\"incidentId\":\\s*\"([^\"]+)\"".toRegex().find(text)?.groupValues?.get(1) ?: file.nameWithoutExtension
+            val savedAt = "\"savedAt\":\\s*(\\d+)".toRegex().find(text)?.groupValues?.get(1)?.toLongOrNull() ?: file.lastModified()
+
+            val accList = mutableListOf<AccelSampleRecord>()
+            val accRegex = "\\{\"t\":(\\d+),\"x\":([-0-9.]+),\"y\":([-0-9.]+),\"z\":([-0-9.]+),\"m\":([-0-9.]+)\\}".toRegex()
+            accRegex.findAll(text).forEach { match ->
+                val t = match.groupValues[1].toLong()
+                val x = match.groupValues[2].toFloat()
+                val y = match.groupValues[3].toFloat()
+                val z = match.groupValues[4].toFloat()
+                val m = match.groupValues[5].toFloat()
+                accList.add(AccelSampleRecord(t, x, y, z, m))
+            }
+
+            val ppgList = mutableListOf<PpgSampleRecord>()
+            val ppgRegex = "\\{\"t\":(\\d+),\"c0\":(\\d+),\"c1\":(\\d+),\"bpm\":([0-9]+|null)\\}".toRegex()
+            ppgRegex.findAll(text).forEach { match ->
+                val t = match.groupValues[1].toLong()
+                val c0 = match.groupValues[2].toLong()
+                val c1 = match.groupValues[3].toLong()
+                val bpmStr = match.groupValues[4]
+                val bpm = if (bpmStr == "null") null else bpmStr.toIntOrNull()
+                ppgList.add(PpgSampleRecord(t, c0, c1, bpm))
+            }
+
+            IncidentTelemetryDetail(
+                incidentId = incidentId,
+                savedAt = savedAt,
+                accSamples = accList,
+                ppgSamples = ppgList
+            )
+        } catch (e: Exception) {
+            DiagnosticManager.log(LogLevel.ERROR, "Failed to load incident detail: ${e.message}")
+            null
+        }
     }
 
     @Synchronized

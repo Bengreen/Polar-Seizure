@@ -26,6 +26,8 @@ import org.openseizuredetector.polar.incident.DailyArchiveFileInfo
 import org.openseizuredetector.polar.incident.DailyTelemetryLogger
 import org.openseizuredetector.polar.incident.IncidentDataRecorder
 import org.openseizuredetector.polar.incident.IncidentFileInfo
+import org.openseizuredetector.polar.ui.AlertDetailDialog
+import org.openseizuredetector.polar.ui.RawIncidentDetailDialog
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -812,6 +814,9 @@ fun CarerAlertsView(
     var recordedIncidents by remember { mutableStateOf(incidentRecorder.listRecordedIncidents()) }
     var recordedAlerts by remember { mutableStateOf(alertHistoryManager.listAlertRecords()) }
 
+    var selectedAlertForViewing by remember { mutableStateOf<AlertHistoryRecord?>(null) }
+    var selectedIncidentFileForViewing by remember { mutableStateOf<java.io.File?>(null) }
+
     LaunchedEffect(Unit) {
         locationProvider.requestFreshPosition { pos ->
             currentGpsFix = if (pos != null) {
@@ -1130,15 +1135,22 @@ fun CarerAlertsView(
                                     horizontalArrangement = Arrangement.End,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    val alertFile = alertHistoryManager.getAlertFile(alert.id)
-                                    if (alertFile != null) {
-                                        OutlinedButton(
-                                            onClick = {
+                                    OutlinedButton(
+                                        onClick = { selectedAlertForViewing = alert },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("Inspect", fontSize = 11.sp)
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    OutlinedButton(
+                                        onClick = {
+                                            val exportFile = alertHistoryManager.exportAlertAsFile(alert)
+                                            if (exportFile != null) {
                                                 try {
                                                     val uri = FileProvider.getUriForFile(
                                                         context,
                                                         "${context.packageName}.fileprovider",
-                                                        alertFile
+                                                        exportFile
                                                     )
                                                     val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                                         type = "application/json"
@@ -1149,13 +1161,15 @@ fun CarerAlertsView(
                                                 } catch (e: Exception) {
                                                     Toast.makeText(context, "Export error: ${e.message}", Toast.LENGTH_SHORT).show()
                                                 }
-                                            },
-                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                        ) {
-                                            Text("Share", fontSize = 11.sp)
-                                        }
-                                        Spacer(modifier = Modifier.width(6.dp))
+                                            } else {
+                                                Toast.makeText(context, "Export error: cannot create file", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("Share", fontSize = 11.sp)
                                     }
+                                    Spacer(modifier = Modifier.width(6.dp))
                                     OutlinedButton(
                                         onClick = {
                                             if (alertHistoryManager.deleteAlertRecord(alert.id)) {
@@ -1253,6 +1267,13 @@ fun CarerAlertsView(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     OutlinedButton(
+                                        onClick = { selectedIncidentFileForViewing = incident.file },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("Inspect", fontSize = 11.sp)
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    OutlinedButton(
                                         onClick = {
                                             try {
                                                 val uri = FileProvider.getUriForFile(
@@ -1272,7 +1293,7 @@ fun CarerAlertsView(
                                         },
                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                     ) {
-                                        Text("Inspect / Share", fontSize = 11.sp)
+                                        Text("Share", fontSize = 11.sp)
                                     }
                                     Spacer(modifier = Modifier.width(6.dp))
                                     OutlinedButton(
@@ -1293,6 +1314,63 @@ fun CarerAlertsView(
                     }
                 }
             }
+        }
+
+        // On-demand Alert & Telemetry Viewer Modals
+        if (selectedAlertForViewing != null) {
+            val alert = selectedAlertForViewing!!
+            AlertDetailDialog(
+                alert = alert,
+                onDismiss = { selectedAlertForViewing = null },
+                onShare = {
+                    val exportFile = alertHistoryManager.exportAlertAsFile(alert)
+                    if (exportFile != null) {
+                        try {
+                            val uri = FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.fileprovider",
+                                exportFile
+                            )
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "application/json"
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "Share Alert Record"))
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Export error: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                },
+                incidentRecorder = incidentRecorder,
+                context = context
+            )
+        }
+
+        if (selectedIncidentFileForViewing != null) {
+            val file = selectedIncidentFileForViewing!!
+            RawIncidentDetailDialog(
+                file = file,
+                onDismiss = { selectedIncidentFileForViewing = null },
+                onShare = {
+                    try {
+                        val uri = FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.fileprovider",
+                            file
+                        )
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "application/json"
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        context.startActivity(Intent.createChooser(shareIntent, "Inspect Incident Telemetry"))
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Export error: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                incidentRecorder = incidentRecorder
+            )
         }
     }
 }
