@@ -15,6 +15,7 @@ enum class LogLevel {
 }
 
 data class DiagnosticLogEntry(
+    val id: String = java.util.UUID.randomUUID().toString(),
     val timestamp: String,
     val level: LogLevel,
     val message: String
@@ -123,5 +124,11 @@ object DiagnosticManager {
 
     fun clearLogs() {
         _logs.value = emptyList()
+    }
+
+    fun deleteLogEntry(id: String) {
+        val current = _logs.value.toMutableList()
+        current.removeAll { it.id == id }
+        _logs.value = current
     }
 }

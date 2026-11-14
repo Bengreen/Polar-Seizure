@@ -40,7 +40,18 @@ Polar-Seizure targets the **Polar Loop Gen2** wristband, interacting via the **o
   * Subscribed via `observeBatteryLevel(deviceId)`.
   * Emits battery warnings if wristband level drops below 20% and critical alert at 10%.
 
-### 2.3 Battery Consumption Optimization Strategy (Mirroring OpenSeizureDetector)
+### 2.4 Automatic BLE Reconnection & Periodic Disconnection Scanner
+* **Remembered Device Binding:**
+  * When a Polar wearable successfully connects, its ID is persisted to app preferences (`last_connected_device_id`).
+* **5-Minute Periodic Background Scan:**
+  * If the device is disconnected, the daemon schedules a recurring background scan every 5 minutes (`DISCONNECTED_SCAN_INTERVAL_MS = 300_000L`).
+  * Each cycle scans for nearby Polar BLE devices for 20 seconds. If the remembered device ID is discovered, the client automatically establishes connection and resumes continuous accelerometer and PPG/HR streaming.
+  * Stops periodic scan timers immediately upon reconnection to conserve battery.
+
+### 2.5 Diagnostic Log Management
+* **In-App Deletion Controls:**
+  * **Daily Telemetry Archives:** Each daily `.json.gz` archive in the Diagnostics tab features an individual `Delete` button, cleanly removing the compressed file from disk and updating available storage.
+  * **Live Console Logs:** Individual log entries in the live diagnostic console include a quick deletion action (`×`) to purge specific messages alongside the global `Clear` button.
 To balance continuous 24-hour monitoring with near-real-time alarm latency, the system implements OpenSeizureDetector's multi-tier battery preservation techniques:
 
 1. **Wristband Battery Optimization:**

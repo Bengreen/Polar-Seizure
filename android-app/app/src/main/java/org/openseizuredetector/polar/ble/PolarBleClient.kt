@@ -55,6 +55,23 @@ class PolarBleClient(
     private var dutyCycleStartTime: Long = 0
     private var lastMovementTime: Long = 0
 
+    // Periodic Disconnected Scanner (every 5 minutes)
+    private var isAutoReconnectScanning = false
+    private val disconnectedScanRunnable = object : Runnable {
+        override fun run() {
+            if (connectedDeviceId == null) {
+                DiagnosticManager.log(
+                    LogLevel.INFO,
+                    "Periodic reconnection check: device is disconnected. Scanning for previously used Polar device..."
+                )
+                startDisconnectedScan()
+                handler.postDelayed(this, DISCONNECTED_SCAN_INTERVAL_MS)
+            } else {
+                stopDisconnectedScan()
+            }
+        }
+    }
+
     private val ppgDutyCycleRunnable = object : Runnable {
         override fun run() {
             val deviceId = connectedDeviceId
@@ -100,6 +117,8 @@ class PolarBleClient(
     companion object {
         private const val MIN_SCAN_INTERVAL_MS = 3000L
         private const val SCAN_RETRY_DELAY_MS = 5000L
+        // Periodic auto-reconnect scan cadence when disconnected: 5 minutes (300 seconds)
+        private const val DISCONNECTED_SCAN_INTERVAL_MS = 300_000L
         // Chart window: 5 minutes (300 seconds)
         // Record 1 point every 500ms = 600 points for a smooth 5-minute accelerometer & energy timeline
         private const val CHART_SAMPLE_INTERVAL_MS = 500L
@@ -197,6 +216,7 @@ class PolarBleClient(
             override fun deviceConnected(polarDeviceInfo: PolarDeviceInfo) {
                 connectedDeviceId = polarDeviceInfo.deviceId
                 saveLastConnectedDeviceId(polarDeviceInfo.deviceId)
+                stopDisconnectedScan()
                 DiagnosticManager.log(
                     LogLevel.SUCCESS,
                     "Device connected: ${polarDeviceInfo.name} (${polarDeviceInfo.deviceId})"
@@ -237,6 +257,7 @@ class PolarBleClient(
                     )
                 }
                 onAlarmStateChanged(SeizureAlarmState.DISCONNECTED)
+                scheduleDisconnectedPeriodicScan()
             }
 
             override fun bleSdkFeatureReady(identifier: String, feature: PolarBleApi.PolarBleSdkFeature) {
@@ -375,6 +396,45 @@ class PolarBleClient(
         scanDisposable = null
     }
 
+    /**
+     * Schedules periodic BLE scan execution every 5 minutes while the device remains disconnected.
+     */
+    fun scheduleDisconnectedPeriodicScan() {
+        if (connectedDeviceId != null) return
+        handler.removeCallbacks(disconnectedScanRunnable)
+        DiagnosticManager.log(
+            LogLevel.INFO,
+            "Device disconnected. Scheduling periodic BLE background scan every ${DISCONNECTED_SCAN_INTERVAL_MS / 60000} minutes."
+        )
+        handler.postDelayed(disconnectedScanRunnable, DISCONNECTED_SCAN_INTERVAL_MS)
+    }
+
+    private fun startDisconnectedScan() {
+        if (connectedDeviceId != null) {
+            stopDisconnectedScan()
+            return
+        }
+        isAutoReconnectScanning = true
+        startScan(isRetry = false)
+
+        // Run disconnected scan for 20 seconds, then stop and wait for next 5-minute tick
+        handler.postDelayed({
+            if (isAutoReconnectScanning && connectedDeviceId == null) {
+                DiagnosticManager.log(
+                    LogLevel.INFO,
+                    "Periodic 20s scan window complete. Waiting ${DISCONNECTED_SCAN_INTERVAL_MS / 60000} mins for next scan..."
+                )
+                stopScan()
+                isAutoReconnectScanning = false
+            }
+        }, 20_000L)
+    }
+
+    fun stopDisconnectedScan() {
+        handler.removeCallbacks(disconnectedScanRunnable)
+        isAutoReconnectScanning = false
+    }
+
     fun autoConnectIfRemembered(): Boolean {
         val rememberedId = getLastConnectedDeviceId()
         if (!rememberedId.isNullOrEmpty() && connectedDeviceId == null) {
@@ -425,6 +485,7 @@ class PolarBleClient(
                         isIncidentRecording = false
                     )
                 }
+                scheduleDisconnectedPeriodicScan()
             }
         } catch (e: Exception) {
             DiagnosticManager.log(LogLevel.ERROR, "Failed to disconnect $deviceId: ${e.localizedMessage}")
@@ -919,6 +980,7 @@ class PolarBleClient(
     }
 
     fun shutDown() {
+        stopDisconnectedScan()
         stopScan()
         stopAccStreaming()
         stopHrStreaming()

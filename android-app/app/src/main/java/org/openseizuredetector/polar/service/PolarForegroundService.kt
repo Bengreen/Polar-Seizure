@@ -296,10 +296,9 @@ class PolarForegroundService : Service() {
                 val client = polarBleClient
                 if (client != null) {
                     val attempted = client.autoConnectIfRemembered()
+                    client.startScan()
                     if (!attempted) {
-                        client.startScan()
-                    } else {
-                        client.startScan()
+                        client.scheduleDisconnectedPeriodicScan()
                     }
                 }
             }, 1200L)
