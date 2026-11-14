@@ -37,9 +37,19 @@ When activated in Phase 2, the `frontend-container` provides a modern, responsiv
   * Tier 2: Secondary carer / neighbor (escalates after 60s if unacknowledged).
   * Tier 3: Emergency response services.
 
-### 2.4 Incident History & Clinician Export
-* Historical log of warning events, confirmed seizures, and dead man's watchdog triggers.
-* One-click PDF / CSV export containing acceleration logs and FFT spectrum data for neurological review.
+### 2.4 Incident History & Alert Telemetry Window Inspection
+* **Dedicated Separate Route & View (`/alerts` or `/incidents`):**
+  * Alert inspection is deliberately kept off the main Live Monitoring Dashboard to prevent cluttering real-time monitoring and focus the clinician/carer on incident analysis.
+  * Historical log of warning events, confirmed seizures, wearer triple-tap panic events, and dead man's watchdog triggers.
+* **Contiguous $\pm 90\text{s}$ ($180\text{s}$ Total) Telemetry Inspection:**
+  * Selecting any past alert opens the detailed Incident Inspection visualizer powered by `GET /api/v1/alerts/:alertId/window?padding_seconds=90`.
+  * Renders synchronized multi-channel time-series charts displaying the $[-90\text{s}, +90\text{s}]$ window around alert trigger time $T_0$:
+    * High-resolution heart rate (BPM) curve with tachycardia onset detection.
+    * 3–8 Hz FFT band power and spectral energy ratio % leading up to and following the event.
+    * 3-axis accelerometer waveform ($X, Y, Z, |a|$) showing motion signature before, during, and after the trigger.
+    * Incident metadata snapshot: GPS coordinates, maps link, SMS recipients and dispatch confirmation, and acknowledgment audit log.
+* **Clinician Export:**
+  * One-click PDF / CSV export containing acceleration logs, heart rate, and FFT spectrum data for neurological review.
 
 ---
 
