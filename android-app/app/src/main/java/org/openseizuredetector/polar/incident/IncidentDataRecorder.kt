@@ -31,10 +31,10 @@ data class PpgSampleRecord(
 class IncidentDataRecorder(private val context: Context) {
 
     companion object {
-        // 60 seconds at 25 Hz ACC = 1500 samples
-        private const val MAX_ACC_BUFFER_SIZE = 1500
-        // 60 seconds at 22 Hz PPG = 1320 samples
-        private const val MAX_PPG_BUFFER_SIZE = 1320
+        // 100 seconds at 25 Hz ACC = 2500 samples (guaranteeing >= 90s pre-alert window)
+        private const val MAX_ACC_BUFFER_SIZE = 2500
+        // 100 seconds at 22 Hz PPG = 2200 samples (guaranteeing >= 90s pre-alert window)
+        private const val MAX_PPG_BUFFER_SIZE = 2200
         private val DATE_FORMAT = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
     }
 

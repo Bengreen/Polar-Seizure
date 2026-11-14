@@ -921,4 +921,107 @@ async fn test_alert_sms_incident_upload_and_query() {
         .unwrap();
 
     assert_eq!(res3.status(), StatusCode::OK);
+
+    // 4. Ingest sample telemetry around this incident:
+    // Some before (-95s, -45s, -10s), at trigger time (0s), and after (+45s, +95s)
+    let alert_time_ms = incident["triggered_at"]
+        .as_str()
+        .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+        .map(|dt| dt.timestamp_millis())
+        .unwrap();
+
+    let telemetry_batch = serde_json::json!({
+        "device_id": "polar-sense-c342",
+        "samples": [
+            {
+                "sample_type": "dsp",
+                "timestamp_ms": alert_time_ms - 95_000, // OUTSIDE window (-95s < -90s)
+                "heart_rate": 70.0,
+                "energy_ratio": 10.0,
+                "band_power": 0.01,
+                "total_power": 0.1,
+                "state": "NORMAL"
+            },
+            {
+                "sample_type": "dsp",
+                "timestamp_ms": alert_time_ms - 45_000, // INSIDE window (-45s)
+                "heart_rate": 85.0,
+                "energy_ratio": 25.0,
+                "band_power": 0.05,
+                "total_power": 0.2,
+                "state": "NORMAL"
+            },
+            {
+                "sample_type": "dsp",
+                "timestamp_ms": alert_time_ms, // INSIDE window (0s - trigger)
+                "heart_rate": 132.5,
+                "energy_ratio": 82.5,
+                "band_power": 64.2,
+                "total_power": 77.8,
+                "state": "ALARM"
+            },
+            {
+                "sample_type": "dsp",
+                "timestamp_ms": alert_time_ms + 45_000, // INSIDE window (+45s)
+                "heart_rate": 125.0,
+                "energy_ratio": 70.0,
+                "band_power": 40.0,
+                "total_power": 55.0,
+                "state": "WARNING"
+            },
+            {
+                "sample_type": "dsp",
+                "timestamp_ms": alert_time_ms + 95_000, // OUTSIDE window (+95s > +90s)
+                "heart_rate": 78.0,
+                "energy_ratio": 12.0,
+                "band_power": 0.02,
+                "total_power": 0.15,
+                "state": "NORMAL"
+            }
+        ]
+    });
+
+    let res4 = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/telemetry/bulk")
+                .header("Authorization", format!("Bearer {}", token))
+                .header("Content-Type", "application/json")
+                .body(Body::from(telemetry_batch.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res4.status(), StatusCode::OK);
+
+    // 5. Query alert window: GET /api/v1/alerts/{alert_id}/window
+    let res5 = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri(format!("/api/v1/alerts/{}/window", alert_id))
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(res5.status(), StatusCode::OK);
+    let body_bytes5 = res5.into_body().collect().await.unwrap().to_bytes();
+    let window_resp: serde_json::Value = serde_json::from_slice(&body_bytes5).unwrap();
+
+    assert_eq!(window_resp["incident"]["id"], alert_id);
+    assert_eq!(window_resp["window_before_ms"], 90_000);
+    assert_eq!(window_resp["window_after_ms"], 90_000);
+    assert_eq!(window_resp["sample_count"], 3);
+
+    let samples = window_resp["samples"].as_array().unwrap();
+    assert_eq!(samples.len(), 3);
+    assert_eq!(samples[0]["timestamp_ms"], alert_time_ms - 45_000);
+    assert_eq!(samples[1]["timestamp_ms"], alert_time_ms);
+    assert_eq!(samples[2]["timestamp_ms"], alert_time_ms + 45_000);
 }

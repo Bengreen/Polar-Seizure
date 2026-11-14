@@ -96,10 +96,45 @@ When implemented in Phase 2, the `backend-container` will serve as a lightweight
     ```
 * **`GET /api/v1/alerts/users/:user_id/incidents`**
   * Retrieves all past emergency incidents and SMS dispatch logs for a user/patient.
+* **`GET /api/v1/alerts/:alertId/acknowledge`**
 * **`POST /api/v1/alerts/:alertId/acknowledge`**
   * Called by carer from web portal to acknowledge and silence escalation.
 * **`GET /api/v1/alerts/active`**
   * Returns list of currently active or unacknowledged alarms.
+* **`GET /api/v1/alerts/:alertId/window?padding_seconds=90`**
+  * Retrieves an emergency alert incident record along with the contiguous telemetry window covering $[-90\text{s}, +90\text{s}]$ ($180\text{s}$ total by default, configurable via `padding_seconds`).
+  * Returns:
+    ```json
+    {
+      "incident": {
+        "id": "00000000-0000-0000-0000-000000000101",
+        "user_id": 88,
+        "device_id": "polar-sense-c342",
+        "alert_type": "PANIC",
+        "severity": "CRITICAL",
+        "trigger_source": "WATCH_TRIPLE_TAP",
+        "heart_rate_bpm": 132.5,
+        "energy_ratio_pct": 82.5,
+        "seizure_band_power": 64.2,
+        "sms_dispatched": true,
+        "sms_recipient_count": 2,
+        "triggered_at": "2026-11-14T09:40:00Z"
+      },
+      "window_before_ms": 90000,
+      "window_after_ms": 90000,
+      "sample_count": 3,
+      "samples": [
+        {
+          "sample_type": "dsp",
+          "timestamp_ms": 1794649155000,
+          "heart_rate_bpm": 85.0,
+          "energy_ratio_pct": 25.0,
+          "seizure_band_power": 0.05,
+          "alarm_state": "NORMAL"
+        }
+      ]
+    }
+    ```
 
 ### 2.3 Real-Time Streaming
 * **`GET /api/v1/stream/live` (Server-Sent Events / SSE)**
