@@ -18,6 +18,7 @@ import androidx.core.app.ServiceCompat
 import org.openseizuredetector.polar.MainActivity
 import org.openseizuredetector.polar.R
 import org.openseizuredetector.polar.alert.AlertAudibleManager
+import org.openseizuredetector.polar.alert.AlertHistoryManager
 import org.openseizuredetector.polar.alert.CarerContactManager
 import org.openseizuredetector.polar.alert.LocationProvider
 import org.openseizuredetector.polar.alert.SmsAlertDispatcher
@@ -39,6 +40,7 @@ class PolarForegroundService : Service() {
     private val locationProvider by lazy { LocationProvider(this) }
     private val smsDispatcher by lazy { SmsAlertDispatcher(this) }
     private val audibleManager by lazy { AlertAudibleManager(this) }
+    private val alertHistoryManager by lazy { AlertHistoryManager(this) }
 
     private var lastSmsDispatchTimeMs: Long = 0
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -188,6 +190,20 @@ class PolarForegroundService : Service() {
                 position = position
             )
             DiagnosticManager.log(LogLevel.INFO, "${alertType.displayName} emergency dispatch completed: $sent SMS sent.")
+
+            val locString = if (position != null) {
+                "${position.latitude}, ${position.longitude} (±${position.accuracyMeters.toInt()}m)"
+            } else {
+                null
+            }
+            alertHistoryManager.recordAlert(
+                alertType = alertType,
+                smsSentCount = sent,
+                heartRateBpm = telemetry.heartRateBpm,
+                energyRatioPercent = telemetry.energyRatioPercent,
+                seizurePower3to8Hz = telemetry.seizurePower3to8Hz,
+                location = locString
+            )
         }
     }
 
