@@ -172,14 +172,11 @@ fun AlertDetailDialog(
                 }
 
                 // Waveform Telemetry Viewer (if associated incident capture exists or matching timestamp)
-                val incidentFileName = alert.incidentFileName
                 val incidentDir = File(context.filesDir, "incidents")
-                val targetFile = if (incidentFileName != null) {
-                    File(incidentDir, incidentFileName)
-                } else {
-                    // Try to match latest incident
-                    incidentRecorder.listRecordedIncidents().firstOrNull()?.file
-                }
+                val targetFile = alert.incidentFileName?.let { File(incidentDir, it) }?.takeIf { it.exists() }
+                    ?: incidentRecorder.listRecordedIncidents().minByOrNull { Math.abs(it.savedAt - alert.timestampMs) }?.file?.takeIf {
+                        Math.abs(it.lastModified() - alert.timestampMs) <= 180_000L
+                    }
 
                 if (targetFile != null && targetFile.exists()) {
                     TelemetryWaveformSection(
@@ -187,11 +184,24 @@ fun AlertDetailDialog(
                         incidentRecorder = incidentRecorder
                     )
                 } else {
-                    Text(
-                        text = "No raw accelerometer window capture associated with this alert.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray
-                    )
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = "High-Rate Telemetry Window (±90s)",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Capturing post-alert window or sensor buffer was offline during trigger.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.Gray
+                            )
+                        }
+                    }
                 }
 
                 // Action Buttons

@@ -160,6 +160,8 @@ class IncidentDataRecorder(private val context: Context) {
 
     fun isRecording(): Boolean = isRecordingActiveIncident
 
+    fun getCurrentIncidentId(): String? = currentIncidentId
+
     /**
      * Fast non-blocking listing of incidents.
      * CRITICAL: Reads only the first few bytes (header) of each file or derives from filename and length.

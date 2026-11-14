@@ -27,7 +27,6 @@ import org.openseizuredetector.polar.incident.DailyTelemetryLogger
 import org.openseizuredetector.polar.incident.IncidentDataRecorder
 import org.openseizuredetector.polar.incident.IncidentFileInfo
 import org.openseizuredetector.polar.ui.AlertDetailDialog
-import org.openseizuredetector.polar.ui.RawIncidentDetailDialog
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -811,11 +810,9 @@ fun CarerAlertsView(
     val hasLoc = locationProvider.hasLocationPermission()
     val incidentRecorder = remember { IncidentDataRecorder(context) }
     val alertHistoryManager = remember { AlertHistoryManager(context) }
-    var recordedIncidents by remember { mutableStateOf(incidentRecorder.listRecordedIncidents()) }
     var recordedAlerts by remember { mutableStateOf(alertHistoryManager.listAlertRecords()) }
 
     var selectedAlertForViewing by remember { mutableStateOf<AlertHistoryRecord?>(null) }
-    var selectedIncidentFileForViewing by remember { mutableStateOf<java.io.File?>(null) }
 
     LaunchedEffect(Unit) {
         locationProvider.requestFreshPosition { pos ->
@@ -1178,136 +1175,10 @@ fun CarerAlertsView(
                         }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                // Section for Detailed Incident Telemetry Captures (±90s pre/post buffers)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Telemetry Captures (${recordedIncidents.size})",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Continuous raw ACC & PPG window (±90s)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    OutlinedButton(
-                        onClick = { recordedIncidents = incidentRecorder.listRecordedIncidents() }
-                    ) {
-                        Text("Refresh", maxLines = 1)
-                    }
-                }
-
-                if (recordedIncidents.isEmpty()) {
-                    Text(
-                        text = "No detailed telemetry captures recorded yet.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray,
-                        fontSize = 12.sp
-                    )
-                } else {
-                    recordedIncidents.take(5).forEach { incident ->
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(10.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = incident.incidentId,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp,
-                                        color = Color(0xFFC62828)
-                                    )
-                                    val sizeKb = (incident.sizeBytes / 1024).coerceAtLeast(1)
-                                    Text(
-                                        text = "$sizeKb KB",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = Color.Gray,
-                                        fontSize = 11.sp
-                                    )
-                                }
-
-                                Text(
-                                    text = "Window: ${incident.accSampleCount} ACC samples | ${incident.ppgSampleCount} PPG samples (~180s total window)",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.End,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    OutlinedButton(
-                                        onClick = { selectedIncidentFileForViewing = incident.file },
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                    ) {
-                                        Text("Inspect", fontSize = 11.sp)
-                                    }
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    OutlinedButton(
-                                        onClick = {
-                                            try {
-                                                val uri = FileProvider.getUriForFile(
-                                                    context,
-                                                    "${context.packageName}.fileprovider",
-                                                    incident.file
-                                                )
-                                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                                    type = "application/json"
-                                                    putExtra(Intent.EXTRA_STREAM, uri)
-                                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                                }
-                                                context.startActivity(Intent.createChooser(shareIntent, "Inspect Incident Telemetry"))
-                                            } catch (e: Exception) {
-                                                Toast.makeText(context, "Export error: ${e.message}", Toast.LENGTH_SHORT).show()
-                                            }
-                                        },
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                    ) {
-                                        Text("Share", fontSize = 11.sp)
-                                    }
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    OutlinedButton(
-                                        onClick = {
-                                            if (incidentRecorder.deleteIncident(incident.file)) {
-                                                recordedIncidents = incidentRecorder.listRecordedIncidents()
-                                                Toast.makeText(context, "Deleted ${incident.file.name}", Toast.LENGTH_SHORT).show()
-                                            }
-                                        },
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE57373))
-                                    ) {
-                                        Text("Delete", fontSize = 11.sp)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
             }
         }
 
-        // On-demand Alert & Telemetry Viewer Modals
+        // On-demand Alert & Telemetry Viewer Modal
         if (selectedAlertForViewing != null) {
             val alert = selectedAlertForViewing!!
             AlertDetailDialog(
@@ -1335,32 +1206,6 @@ fun CarerAlertsView(
                 },
                 incidentRecorder = incidentRecorder,
                 context = context
-            )
-        }
-
-        if (selectedIncidentFileForViewing != null) {
-            val file = selectedIncidentFileForViewing!!
-            RawIncidentDetailDialog(
-                file = file,
-                onDismiss = { selectedIncidentFileForViewing = null },
-                onShare = {
-                    try {
-                        val uri = FileProvider.getUriForFile(
-                            context,
-                            "${context.packageName}.fileprovider",
-                            file
-                        )
-                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "application/json"
-                            putExtra(Intent.EXTRA_STREAM, uri)
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }
-                        context.startActivity(Intent.createChooser(shareIntent, "Inspect Incident Telemetry"))
-                    } catch (e: Exception) {
-                        Toast.makeText(context, "Export error: ${e.message}", Toast.LENGTH_SHORT).show()
-                    }
-                },
-                incidentRecorder = incidentRecorder
             )
         }
     }
