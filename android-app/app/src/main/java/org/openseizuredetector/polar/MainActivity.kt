@@ -348,7 +348,8 @@ fun MainScreen(
                             clipboard.setPrimaryClip(ClipData.newPlainText("Polar-Seizure Diagnostics", text))
                             Toast.makeText(context, "Copied ${logs.size} log entries to clipboard", Toast.LENGTH_SHORT).show()
                         },
-                        onClearLogs = { DiagnosticManager.clearLogs() }
+                        onClearLogs = { DiagnosticManager.clearLogs() },
+                        onDeleteLogEntry = { id -> DiagnosticManager.deleteLogEntry(id) }
                     )
                 }
             }
@@ -1248,7 +1249,8 @@ fun DiagnosticsView(
     telemetry: LiveBleDiagnostics,
     logs: List<DiagnosticLogEntry>,
     onCopyLogs: () -> Unit,
-    onClearLogs: () -> Unit
+    onClearLogs: () -> Unit,
+    onDeleteLogEntry: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val dailyLogger = remember { DailyTelemetryLogger(context) }
@@ -1344,27 +1346,41 @@ fun DiagnosticsView(
                                     fontSize = 11.sp
                                 )
                             }
-                            Button(
-                                onClick = {
-                                    try {
-                                        val uri = FileProvider.getUriForFile(
-                                            context,
-                                            "${context.packageName}.fileprovider",
-                                            archive.file
-                                        )
-                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                            type = "application/gzip"
-                                            putExtra(Intent.EXTRA_STREAM, uri)
-                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Button(
+                                    onClick = {
+                                        try {
+                                            val uri = FileProvider.getUriForFile(
+                                                context,
+                                                "${context.packageName}.fileprovider",
+                                                archive.file
+                                            )
+                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                type = "application/gzip"
+                                                putExtra(Intent.EXTRA_STREAM, uri)
+                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            }
+                                            context.startActivity(Intent.createChooser(shareIntent, "Export Daily Telemetry Archive"))
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Export error: ${e.message}", Toast.LENGTH_SHORT).show()
                                         }
-                                        context.startActivity(Intent.createChooser(shareIntent, "Export Daily Telemetry Archive"))
-                                    } catch (e: Exception) {
-                                        Toast.makeText(context, "Export error: ${e.message}", Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                            ) {
-                                Text("Download / Share", fontSize = 11.sp)
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Text("Share", fontSize = 11.sp)
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        if (dailyLogger.deleteArchive(archive.file)) {
+                                            archives = dailyLogger.listAvailableArchives()
+                                            Toast.makeText(context, "Deleted ${archive.fileName}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE57373))
+                                ) {
+                                    Text("Delete", fontSize = 11.sp)
+                                }
                             }
                         }
                     }
@@ -1424,20 +1440,36 @@ fun DiagnosticsView(
                         .padding(8.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    items(logs) { entry ->
+                    items(logs, key = { it.id }) { entry ->
                         val logColor = when (entry.level) {
                             LogLevel.SUCCESS -> Color(0xFF81C784)
                             LogLevel.INFO -> Color(0xFF64B5F6)
                             LogLevel.WARN -> Color(0xFFFFD54F)
                             LogLevel.ERROR -> Color(0xFFE57373)
                         }
-                        Text(
-                            text = "[${entry.timestamp}] [${entry.level}] ${entry.message}",
-                            color = logColor,
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace,
-                            lineHeight = 14.sp
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "[${entry.timestamp}] [${entry.level}] ${entry.message}",
+                                color = logColor,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                lineHeight = 14.sp,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            OutlinedButton(
+                                onClick = { onDeleteLogEntry(entry.id) },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                modifier = Modifier.height(22.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE57373))
+                            ) {
+                                Text("×", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
             }
