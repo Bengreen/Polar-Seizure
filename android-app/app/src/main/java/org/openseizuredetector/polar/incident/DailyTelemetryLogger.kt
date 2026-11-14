@@ -137,4 +137,22 @@ class DailyTelemetryLogger(private val context: Context) {
             )
         }
     }
+
+    fun deleteArchive(file: File): Boolean {
+        return try {
+            if (currentFile?.absolutePath == file.absolutePath) {
+                closeCurrentWriter()
+                currentFile = null
+                currentDay = null
+            }
+            val deleted = file.delete()
+            if (deleted) {
+                DiagnosticManager.log(LogLevel.INFO, "Deleted archive: ${file.name}")
+            }
+            deleted
+        } catch (e: Exception) {
+            DiagnosticManager.log(LogLevel.ERROR, "Failed to delete archive ${file.name}: ${e.message}")
+            false
+        }
+    }
 }
