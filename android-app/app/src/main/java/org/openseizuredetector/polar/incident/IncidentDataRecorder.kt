@@ -23,6 +23,15 @@ data class PpgSampleRecord(
     val derivedBpm: Int?
 )
 
+data class IncidentFileInfo(
+    val file: File,
+    val incidentId: String,
+    val savedAt: Long,
+    val sizeBytes: Long,
+    val accSampleCount: Int,
+    val ppgSampleCount: Int
+)
+
 /**
  * IncidentDataRecorder maintains rolling circular ring buffers of raw ACC and PPG telemetry.
  * When a suspect movement event or seizure alarm occurs, it flushes pre-incident history
@@ -139,4 +148,48 @@ class IncidentDataRecorder(private val context: Context) {
     }
 
     fun isRecording(): Boolean = isRecordingActiveIncident
+
+    @Synchronized
+    fun listRecordedIncidents(): List<IncidentFileInfo> {
+        val dir = File(context.filesDir, "incidents")
+        if (!dir.exists()) return emptyList()
+        val files = dir.listFiles { f -> f.extension == "json" } ?: return emptyList()
+        return files.mapNotNull { f ->
+            try {
+                val text = f.readText()
+                val idMatch = "\"incidentId\":\\s*\"([^\"]+)\"".toRegex().find(text)?.groupValues?.get(1) ?: f.nameWithoutExtension
+                val savedAtMatch = "\"savedAt\":\\s*(\\d+)".toRegex().find(text)?.groupValues?.get(1)?.toLongOrNull() ?: f.lastModified()
+                val accCount = "\"accSampleCount\":\\s*(\\d+)".toRegex().find(text)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                val ppgCount = "\"ppgSampleCount\":\\s*(\\d+)".toRegex().find(text)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                IncidentFileInfo(
+                    file = f,
+                    incidentId = idMatch,
+                    savedAt = savedAtMatch,
+                    sizeBytes = f.length(),
+                    accSampleCount = accCount,
+                    ppgSampleCount = ppgCount
+                )
+            } catch (e: Exception) {
+                null
+            }
+        }.sortedByDescending { it.savedAt }
+    }
+
+    @Synchronized
+    fun deleteIncident(file: File): Boolean {
+        return try {
+            if (file.exists()) {
+                val deleted = file.delete()
+                if (deleted) {
+                    DiagnosticManager.log(LogLevel.INFO, "Deleted recorded incident: ${file.name}")
+                }
+                deleted
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            DiagnosticManager.log(LogLevel.ERROR, "Failed to delete incident file: ${e.message}")
+            false
+        }
+    }
 }

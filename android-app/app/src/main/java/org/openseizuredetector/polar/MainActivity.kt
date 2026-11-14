@@ -21,6 +21,8 @@ import org.openseizuredetector.polar.alert.LocationProvider
 import org.openseizuredetector.polar.alert.SmsAlertDispatcher
 import org.openseizuredetector.polar.incident.DailyArchiveFileInfo
 import org.openseizuredetector.polar.incident.DailyTelemetryLogger
+import org.openseizuredetector.polar.incident.IncidentDataRecorder
+import org.openseizuredetector.polar.incident.IncidentFileInfo
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -803,6 +805,8 @@ fun CarerAlertsView(
 
     val hasSms = smsDispatcher.hasSmsPermission()
     val hasLoc = locationProvider.hasLocationPermission()
+    val incidentRecorder = remember { IncidentDataRecorder(context) }
+    var recordedIncidents by remember { mutableStateOf(incidentRecorder.listRecordedIncidents()) }
 
     LaunchedEffect(Unit) {
         locationProvider.requestFreshPosition { pos ->
@@ -1024,6 +1028,134 @@ fun CarerAlertsView(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Send Routine [TEST ALERT] SMS")
+                }
+            }
+        }
+
+        // Dedicated Alert & Incident Inspection Card (PRD-002 / PRD-006 separated from Dashboard)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Recorded Alert & Incident Triggers (${recordedIncidents.size})",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Dedicated alert inspection (±90s pre/post telemetry window)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { recordedIncidents = incidentRecorder.listRecordedIncidents() },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Text("Refresh", fontSize = 11.sp)
+                    }
+                }
+
+                if (recordedIncidents.isEmpty()) {
+                    Text(
+                        text = "No emergency alert triggers or suspect seizure incidents recorded yet. Incident captures (±90s telemetry) will appear here when triggered.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray,
+                        fontSize = 12.sp
+                    )
+                } else {
+                    recordedIncidents.forEach { incident ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = incident.incidentId,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = Color(0xFFC62828)
+                                    )
+                                    val sizeKb = (incident.sizeBytes / 1024).coerceAtLeast(1)
+                                    Text(
+                                        text = "$sizeKb KB",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color.Gray,
+                                        fontSize = 11.sp
+                                    )
+                                }
+
+                                Text(
+                                    text = "Window: ${incident.accSampleCount} ACC samples | ${incident.ppgSampleCount} PPG samples (~180s total window)",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            try {
+                                                val uri = FileProvider.getUriForFile(
+                                                    context,
+                                                    "${context.packageName}.fileprovider",
+                                                    incident.file
+                                                )
+                                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                    type = "application/json"
+                                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                }
+                                                context.startActivity(Intent.createChooser(shareIntent, "Inspect Incident Telemetry"))
+                                            } catch (e: Exception) {
+                                                Toast.makeText(context, "Export error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("Inspect / Share", fontSize = 11.sp)
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    OutlinedButton(
+                                        onClick = {
+                                            if (incidentRecorder.deleteIncident(incident.file)) {
+                                                recordedIncidents = incidentRecorder.listRecordedIncidents()
+                                                Toast.makeText(context, "Deleted ${incident.file.name}", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE57373))
+                                    ) {
+                                        Text("Delete", fontSize = 11.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
