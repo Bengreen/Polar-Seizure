@@ -181,6 +181,10 @@ class PolarForegroundService : Service() {
         val patientName = carerManager.getPatientName()
         val telemetry = DiagnosticManager.telemetry.value
 
+        // Ensure high-rate continuous incident recording is active so the ±90s buffer is captured
+        val incidentId = polarBleClient?.incidentRecorder?.onIncidentEscalationTriggered(alertType.displayName)
+            ?: "incident_${System.currentTimeMillis()}"
+
         locationProvider.requestFreshPosition { position ->
             val sent = smsDispatcher.dispatchEmergencyAlert(
                 alertType = alertType,
@@ -196,7 +200,7 @@ class PolarForegroundService : Service() {
             } else {
                 null
             }
-            val incidentFile = polarBleClient?.incidentRecorder?.listRecordedIncidents()?.firstOrNull()?.file?.name
+            val incidentFile = "$incidentId.json"
             alertHistoryManager.recordAlert(
                 alertType = alertType,
                 smsSentCount = sent,
