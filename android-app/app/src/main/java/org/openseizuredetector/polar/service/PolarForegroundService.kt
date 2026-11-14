@@ -196,13 +196,15 @@ class PolarForegroundService : Service() {
             } else {
                 null
             }
+            val incidentFile = polarBleClient?.incidentRecorder?.listRecordedIncidents()?.firstOrNull()?.file?.name
             alertHistoryManager.recordAlert(
                 alertType = alertType,
                 smsSentCount = sent,
                 heartRateBpm = telemetry.heartRateBpm,
                 energyRatioPercent = telemetry.energyRatioPercent,
                 seizurePower3to8Hz = telemetry.seizurePower3to8Hz,
-                location = locString
+                location = locString,
+                incidentFileName = incidentFile
             )
         }
     }
