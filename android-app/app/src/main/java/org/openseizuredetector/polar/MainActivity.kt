@@ -10,11 +10,14 @@ import android.os.Build
 import android.os.Bundle
 import android.net.Uri
 import android.widget.Toast
+import java.util.Locale
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
+import org.openseizuredetector.polar.alert.AlertHistoryManager
+import org.openseizuredetector.polar.alert.AlertHistoryRecord
 import org.openseizuredetector.polar.alert.CarerContact
 import org.openseizuredetector.polar.alert.CarerContactManager
 import org.openseizuredetector.polar.alert.LocationProvider
@@ -350,8 +353,7 @@ fun MainScreen(
                             clipboard.setPrimaryClip(ClipData.newPlainText("Polar-Seizure Diagnostics", text))
                             Toast.makeText(context, "Copied ${logs.size} log entries to clipboard", Toast.LENGTH_SHORT).show()
                         },
-                        onClearLogs = { DiagnosticManager.clearLogs() },
-                        onDeleteLogEntry = { id -> DiagnosticManager.deleteLogEntry(id) }
+                        onClearLogs = { DiagnosticManager.clearLogs() }
                     )
                 }
             }
@@ -806,7 +808,9 @@ fun CarerAlertsView(
     val hasSms = smsDispatcher.hasSmsPermission()
     val hasLoc = locationProvider.hasLocationPermission()
     val incidentRecorder = remember { IncidentDataRecorder(context) }
+    val alertHistoryManager = remember { AlertHistoryManager(context) }
     var recordedIncidents by remember { mutableStateOf(incidentRecorder.listRecordedIncidents()) }
+    var recordedAlerts by remember { mutableStateOf(alertHistoryManager.listAlertRecords()) }
 
     LaunchedEffect(Unit) {
         locationProvider.requestFreshPosition { pos ->
@@ -1049,12 +1053,143 @@ fun CarerAlertsView(
                 ) {
                     Column {
                         Text(
-                            text = "Recorded Alert & Incident Triggers (${recordedIncidents.size})",
+                            text = "Alerts & Dispatched Events (${recordedAlerts.size})",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Dedicated alert inspection (±90s pre/post telemetry window)",
+                            text = "History of panic, test, and seizure triggers with vital signs",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = { recordedAlerts = alertHistoryManager.listAlertRecords() },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Text("Refresh", fontSize = 11.sp)
+                    }
+                }
+
+                if (recordedAlerts.isEmpty()) {
+                    Text(
+                        text = "No emergency alert events recorded yet. Panic and Test alerts triggered above will appear here.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray,
+                        fontSize = 12.sp
+                    )
+                } else {
+                    recordedAlerts.forEach { alert ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = alert.alertType.smsPrefix,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = if (alert.alertType == org.openseizuredetector.polar.model.EmergencyAlertType.TEST) Color(0xFF1976D2) else Color(0xFFC62828)
+                                    )
+                                    Text(
+                                        text = alert.dateString,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color.Gray,
+                                        fontSize = 11.sp
+                                    )
+                                }
+
+                                val hrText = alert.heartRateBpm?.let { "$it bpm" } ?: "HR N/A"
+                                val energyText = "Energy: %.1f%% (Pwr: %.3f)".format(Locale.US, alert.energyRatioPercent, alert.seizurePower3to8Hz)
+                                val smsText = "${alert.smsSentCount} SMS sent"
+                                Text(
+                                    text = "$hrText • $energyText • $smsText",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                if (alert.location != null) {
+                                    Text(
+                                        text = "📍 Location: ${alert.location}",
+                                        fontSize = 11.sp,
+                                        color = Color.Gray
+                                    )
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    val alertFile = alertHistoryManager.getAlertFile(alert.id)
+                                    if (alertFile != null) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                try {
+                                                    val uri = FileProvider.getUriForFile(
+                                                        context,
+                                                        "${context.packageName}.fileprovider",
+                                                        alertFile
+                                                    )
+                                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                        type = "application/json"
+                                                        putExtra(Intent.EXTRA_STREAM, uri)
+                                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                    }
+                                                    context.startActivity(Intent.createChooser(shareIntent, "Share Alert Record"))
+                                                } catch (e: Exception) {
+                                                    Toast.makeText(context, "Export error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                }
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                        ) {
+                                            Text("Share", fontSize = 11.sp)
+                                        }
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                    }
+                                    OutlinedButton(
+                                        onClick = {
+                                            if (alertHistoryManager.deleteAlertRecord(alert.id)) {
+                                                recordedAlerts = alertHistoryManager.listAlertRecords()
+                                                Toast.makeText(context, "Deleted alert record", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE57373))
+                                    ) {
+                                        Text("Delete", fontSize = 11.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Section for Detailed Incident Telemetry Captures (±90s pre/post buffers)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Telemetry Captures (${recordedIncidents.size})",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Continuous raw ACC & PPG window (±90s)",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.Gray
                         )
@@ -1069,13 +1204,13 @@ fun CarerAlertsView(
 
                 if (recordedIncidents.isEmpty()) {
                     Text(
-                        text = "No emergency alert triggers or suspect seizure incidents recorded yet. Incident captures (±90s telemetry) will appear here when triggered.",
+                        text = "No detailed telemetry captures recorded yet.",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.Gray,
                         fontSize = 12.sp
                     )
                 } else {
-                    recordedIncidents.forEach { incident ->
+                    recordedIncidents.take(5).forEach { incident ->
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -1094,7 +1229,7 @@ fun CarerAlertsView(
                                     Text(
                                         text = incident.incidentId,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp,
+                                        fontSize = 12.sp,
                                         color = Color(0xFFC62828)
                                     )
                                     val sizeKb = (incident.sizeBytes / 1024).coerceAtLeast(1)
@@ -1108,7 +1243,7 @@ fun CarerAlertsView(
 
                                 Text(
                                     text = "Window: ${incident.accSampleCount} ACC samples | ${incident.ppgSampleCount} PPG samples (~180s total window)",
-                                    fontSize = 12.sp,
+                                    fontSize = 11.sp,
                                     fontWeight = FontWeight.Medium
                                 )
 
@@ -1381,8 +1516,7 @@ fun DiagnosticsView(
     telemetry: LiveBleDiagnostics,
     logs: List<DiagnosticLogEntry>,
     onCopyLogs: () -> Unit,
-    onClearLogs: () -> Unit,
-    onDeleteLogEntry: (String) -> Unit = {}
+    onClearLogs: () -> Unit
 ) {
     val context = LocalContext.current
     val dailyLogger = remember { DailyTelemetryLogger(context) }
@@ -1579,29 +1713,13 @@ fun DiagnosticsView(
                             LogLevel.WARN -> Color(0xFFFFD54F)
                             LogLevel.ERROR -> Color(0xFFE57373)
                         }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "[${entry.timestamp}] [${entry.level}] ${entry.message}",
-                                color = logColor,
-                                fontSize = 11.sp,
-                                fontFamily = FontFamily.Monospace,
-                                lineHeight = 14.sp,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            OutlinedButton(
-                                onClick = { onDeleteLogEntry(entry.id) },
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                                modifier = Modifier.height(22.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE57373))
-                            ) {
-                                Text("×", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
+                        Text(
+                            text = "[${entry.timestamp}] [${entry.level}] ${entry.message}",
+                            color = logColor,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            lineHeight = 14.sp
+                        )
                     }
                 }
             }

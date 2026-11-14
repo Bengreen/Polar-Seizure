@@ -125,10 +125,4 @@ object DiagnosticManager {
     fun clearLogs() {
         _logs.value = emptyList()
     }
-
-    fun deleteLogEntry(id: String) {
-        val current = _logs.value.toMutableList()
-        current.removeAll { it.id == id }
-        _logs.value = current
-    }
 }
