@@ -1001,7 +1001,7 @@ fun CarerAlertsView(
             }
         }
 
-        // Test Alert & Panic Card
+        // Carer Alert SMS Testing Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
@@ -1012,24 +1012,15 @@ fun CarerAlertsView(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    text = "Emergency Triggers & Testing",
+                    text = "Carer Alert SMS Testing",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Dispatches SMS alerts with wearer vital signs, band & phone battery %, current 3-8Hz threshold, and live Google Maps GPS navigation pin.",
+                    text = "Send a test SMS to nominated carers with vital signs, battery %, and live GPS location to verify phone carrier SMS delivery.",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.Gray
                 )
-
-                Button(
-                    onClick = onTriggerPanic,
-                    enabled = contacts.isNotEmpty() && hasSms,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828))
-                ) {
-                    Text("🆘 PANIC: Send Immediate Emergency SMS", fontWeight = FontWeight.Bold)
-                }
 
                 OutlinedButton(
                     onClick = onTriggerTestAlert,
@@ -1056,7 +1047,7 @@ fun CarerAlertsView(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "Alerts & Dispatched Events (${recordedAlerts.size})",
                             style = MaterialTheme.typography.titleMedium,
@@ -1068,11 +1059,11 @@ fun CarerAlertsView(
                             color = Color.Gray
                         )
                     }
+                    Spacer(modifier = Modifier.width(8.dp))
                     OutlinedButton(
-                        onClick = { recordedAlerts = alertHistoryManager.listAlertRecords() },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        onClick = { recordedAlerts = alertHistoryManager.listAlertRecords() }
                     ) {
-                        Text("Refresh", fontSize = 11.sp)
+                        Text("Refresh", maxLines = 1)
                     }
                 }
 
@@ -1196,7 +1187,7 @@ fun CarerAlertsView(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "Telemetry Captures (${recordedIncidents.size})",
                             style = MaterialTheme.typography.titleSmall,
@@ -1208,11 +1199,11 @@ fun CarerAlertsView(
                             color = Color.Gray
                         )
                     }
+                    Spacer(modifier = Modifier.width(8.dp))
                     OutlinedButton(
-                        onClick = { recordedIncidents = incidentRecorder.listRecordedIncidents() },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        onClick = { recordedIncidents = incidentRecorder.listRecordedIncidents() }
                     ) {
-                        Text("Refresh", fontSize = 11.sp)
+                        Text("Refresh", maxLines = 1)
                     }
                 }
 
