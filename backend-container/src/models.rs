@@ -191,3 +191,13 @@ pub struct StoredTelemetrySample {
     pub emergency_type: Option<String>,
     pub batch_id: Uuid,
 }
+
+/// Alert incident contiguous time window inspection response.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AlertWindowResponse {
+    pub incident: AlertIncident,
+    pub window_before_ms: i64,
+    pub window_after_ms: i64,
+    pub sample_count: usize,
+    pub samples: Vec<StoredTelemetrySample>,
+}

@@ -95,6 +95,10 @@ pub fn app_router(state: AppState) -> Router {
         .route(
             "/api/v1/alerts/{alert_id}/acknowledge",
             post(alerts::acknowledge_alert),
+        )
+        .route(
+            "/api/v1/alerts/{alert_id}/window",
+            get(alerts::get_alert_window),
         );
 
     // Dev auth route

@@ -133,8 +133,8 @@ class PolarBleClient(
         private const val PPG_MIN_LOCK_SAMPLE_MS = 5_000L
         // Stillness skip threshold: if resting with no movement for 10 min, skip routine PPG cycle
         private const val STILLNESS_SKIP_INTERVAL_MS = 600_000L
-        // Hold time for incident escalation before reverting to duty-cycle
-        private const val INCIDENT_HOLD_DURATION_MS = 25_000L
+        // Hold time for incident escalation before reverting to duty-cycle (90s post-incident window)
+        private const val INCIDENT_HOLD_DURATION_MS = 90_000L
         // Seizure-level spectral threshold: requires genuine sustained rhythmic energy in 3-8 Hz band
         // Full seizure alarm requires ratio >= 50% for 2+ windows (Power >= 0.05).
         // Incident escalation requires ratio >= 45% sustained for 2 consecutive windows (or active WARNING/ALARM).
